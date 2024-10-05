@@ -21,27 +21,29 @@ class Config:
                         v_ele = Config(path=None)
                         v_ele._make(v)
                         v_config.append(v_ele)
+                    v_list = Config(path=None)
+                    v_list._make(v_config)
+                    setattr(self, key, v_list)
                 else:
                     v_config = Config(path=None)
                     v_config._make(value)
-                setattr(self, key, v_config)
+                    setattr(self, key, v_config)
     
     def __repr__(self):
-        return yaml.dump(self._to_dict(), indent=4)  # 들여쓰기 4칸으로 JSON 형식 출력
+        return yaml.dump(self._resolve(), indent=4)  # 들여쓰기 4칸으로 JSON 형식 출력
 
-    def _to_dict(self):
+    def _resolve(self):
         # 객체를 딕셔너리로 변환하는 메서드
         if self.atom is not None:
+            if isinstance(self.atom, list):
+                return [v._resolve() for v in self.atom]
             return self.atom
         
         result = {}
-        for key, value in self.__dict__.items():
-            if isinstance(value, Config):
-                result[key] = value._to_dict()  # 재귀적으로 딕셔너리로 변환
-            elif isinstance(value, list):
-                result[key] = [v._to_dict() if isinstance(v, Config) else v for v in value]
-            else:
-                result[key] = value
+        for key, config_value in self.__dict__.items():
+            result[key] = config_value._resolve()  # 재귀적으로 딕셔너리로 변환
+        if result == {}:
+            return None
         return result
 
     def __getattr__(self, name):
@@ -49,12 +51,15 @@ class Config:
             return None
         return Config(path=None)
     
+    def __getitem__(self, index):
+        return self.atom[index]
+    
     def __call__(self, default_value=None):
         if self.atom is not None:
-            return self.atom
+            return self._resolve()
         
         if len(self.__dict__) > 0:
-            return self._to_dict()
+            return self._resolve()
         
         if default_value is not None:
             return default_value
