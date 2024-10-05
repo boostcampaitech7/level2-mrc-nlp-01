@@ -1,11 +1,12 @@
 import yaml
 
 class Config:
-    def __init__(self, path='./config.yaml'):
+    def __init__(self, config_dict=None, path='./config.yaml'):
         if path is None:
             return
-        with open(path, 'r') as f:
-            config_dict = yaml.safe_load(f)
+        if config_dict is None:
+            with open(path, 'r') as f:
+                config_dict = yaml.safe_load(f)
         self._make(config_dict)
     
     def _make(self, configs):
