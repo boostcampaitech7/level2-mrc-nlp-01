@@ -48,11 +48,14 @@ class Config:
             return None
         return Config(path=None)
     
-    def __call__(self):
+    def __call__(self, default_value=None):
         if self.atom is not None:
             return self.atom
         
-        if len(self.__dict__) == 0:
-            return None
+        if len(self.__dict__) > 0:
+            return self._to_dict()
         
-        return self._to_dict()
+        if default_value is not None:
+            return default_value
+        
+        return None
