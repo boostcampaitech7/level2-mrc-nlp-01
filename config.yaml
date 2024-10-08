@@ -1,0 +1,42 @@
+model:
+  name: klue/bert-base
+
+seed: 42
+
+training:
+  epochs: 20 # Not Implemented
+  batch_size: 32 # Not Implemented
+  learning_rate: 0.00001 # Not Implemented
+  optimizer: AdamW # Not Implemented
+  loss: L1loss # Not Implemented
+  shuffle: True # Not Implemented
+  weight_decay: 0.01 # Not Implemented
+  scheduler: CosineAnnealingLR # Not Implemented
+
+dataRetrieval:
+  eval: True
+  context_path: ./data/wikipedia_documents.json
+  top_k: 5
+  faiss:
+    use: False
+    num_clusters: 64
+
+dataQA:
+  path: ./data/train_dataset
+  tokenizer:
+    max_seq_length: 384
+    max_answer_length: 30
+    doc_stride: 128
+    pad_to_max_length: True
+    preprocessing_num_wrokers: 
+    overwrite_cache: False
+
+  preprocess:
+    - method: your-preprocess-method
+      params:
+        p: 0.0
+
+  augmentation:
+    # - method: your-augementation-method
+    #   params:
+    #     p: 0.0
