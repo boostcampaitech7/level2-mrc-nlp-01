@@ -1,3 +1,5 @@
+from transformers import EvalPrediction
+
 class QuestionAnsweringTokenizerWrapper:
     def __init__(self, tokenizer, config, column_name_dict = {"question": "question", "context": "context", "answers": "answers"}):
         self.tokenizer = tokenizer
@@ -131,7 +133,7 @@ class QuestionAnsweringTokenizerWrapper:
         sample_mapping = tokenized_example.pop("overflow_to_sample_mapping")
         
         tokenized_example["example_id"] = []
-        for i, sample_idx in enumerate(len(sample_mapping)): # tokenize 이후의 쪼개진 example에 대하여
+        for i, sample_idx in enumerate(sample_mapping): # tokenize 이후의 쪼개진 example에 대하여
             original_id = examples["id"][sample_idx]
             tokenized_example["example_id"].append(original_id)
             
@@ -143,3 +145,13 @@ class QuestionAnsweringTokenizerWrapper:
             ]
         
         return tokenized_example
+    
+    def decode(self, examples, predictions, training_args):
+        formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
+        if training_args.do_predict:
+            return formatted_predictions
+        elif training_args.do_eval:
+            return EvalPrediction(
+                predictions=formatted_predictions,
+                label_ids=[{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples],
+            )
