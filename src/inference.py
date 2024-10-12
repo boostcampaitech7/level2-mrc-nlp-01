@@ -21,6 +21,7 @@ from QuestionAnswering.utils import check_no_error
 from QuestionAnswering.trainer import QuestionAnsweringTrainer
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
+from Retrieval.dense_retrieval import DenseRetrieval
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -58,10 +59,16 @@ def main():
     model = AutoModelForQuestionAnswering.from_pretrained(config.model.name(), config=config_hf)
     
     if config.dataRetrieval.eval(True):
-        retriever = SparseRetrieval(
-            tokenize_fn=tokenizer.tokenize,
-            context_path=config.dataRetrieval.context_path(),
-        )
+        if config.dataRetrieval.type() == "sparse":
+            retriever = SparseRetrieval(
+                tokenize_fn=tokenizer.tokenize,
+                context_path=config.dataRetrieval.context_path(),
+            )
+        elif config.dataRetrieval.type() == "dense":
+            retriever = DenseRetrieval(
+                model_name=config.model.name(),
+                context_path=config.dataRetrieval.context_path(),
+            )
         datasets = retriever.run(datasets, training_args, config)
 
     if not (training_args.do_eval or training_args.do_predict):
