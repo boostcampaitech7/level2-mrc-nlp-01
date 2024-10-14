@@ -1,7 +1,7 @@
 import yaml
 
 class Config:
-    def __init__(self, config_dict=None, path='../config.yaml'):
+    def __init__(self, config_dict=None, path='./config.yaml'):
         if path is None:
             return
         if config_dict is None:
