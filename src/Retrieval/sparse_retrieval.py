@@ -31,6 +31,7 @@ class SparseRetrieval:
         self,
         tokenize_fn,
         context_path: Optional[str] = "wikipedia_documents.json",
+        testing: bool = False
     ) -> NoReturn:
 
         """
@@ -53,12 +54,19 @@ class SparseRetrieval:
         Summary:
             Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
         """
-
+        self.testing = testing
         data_path = os.path.dirname(context_path)
         context_path = os.path.basename(context_path)
         self.data_path = data_path
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
+            
+        if self.testing:
+            # 1%만 선택한다.
+            total_documents = len(wiki)
+            num_documents = int(0.01 * total_documents)
+            wiki = {k: wiki[k] for k in list(wiki.keys())[:num_documents]}
+
 
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
