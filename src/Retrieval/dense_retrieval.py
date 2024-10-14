@@ -71,6 +71,7 @@ class DenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
+        self.p_embeddings = None
         self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.num_negatives = num_negatives
@@ -162,6 +163,7 @@ class DenseRetrieval:
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
         pass
+
     def retrieve(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
@@ -173,7 +175,7 @@ class DenseRetrieval:
                 print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
                 print(self.contexts[doc_indices[i]])
 
-            return (doc_scores, [self.contexts[doc_indices]])
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
             total = []
@@ -199,6 +201,17 @@ class DenseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas 
         
+    def encode_passages(self):
+
+        self.p_encoder.eval()
+        with torch.no_grad():
+            p_embeddings = []
+            for batch in tqdm(DataLoader(self.dataset, batch_size=32), desc="Encoding passages"):
+                p_seqs = self.tokenizer(batch['context'], padding=True, truncation=True, return_tensors="pt")
+                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
+                p_embeddings.append(self.p_encoder(**p_seqs).cpu())
+        
+        self.p_embeddings = torch.cat(p_embeddings, dim=0)
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
         
@@ -211,27 +224,19 @@ class DenseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-
-        self.p_encoder.eval()
+        if self.p_embeddings is None:
+            self.encode_passages()
+        
         self.q_encoder.eval()
-
         with torch.no_grad():
             q_seqs = self.tokenizer([query], padding=True, truncation=True, return_tensors="pt")
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embedding = self.q_encoder(**q_seqs)
 
-            p_embeddings = []
-            for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
-                p_seqs = self.tokenizer(batch['context'], padding=True, truncation=True, return_tensors="pt")
-                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
-                p_embeddings.append(self.p_encoder(**p_seqs))
-
-            p_embeddings = torch.cat(p_embeddings, dim=0)
-
-            sim_scores = torch.matmul(q_embedding, p_embeddings.transpose(0, 1)).squeeze()
+            sim_scores = torch.matmul(q_embedding.cpu(), self.p_embeddings.transpose(0, 1)).squeeze()
             doc_score, doc_indices = torch.topk(sim_scores, k=k)
 
-            return doc_score.tolist(), doc_indices.tolist()
+        return doc_score.tolist(), doc_indices.tolist()
 
     def get_relevant_doc_bulk(
         self, queries: List[str], k: Optional[int] = 1
@@ -382,7 +387,7 @@ if __name__ == "__main__":
 
     else:
         with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds)
+            df = retriever.retrieve(full_ds, topk=2)
             df["correct"] = df["original_context"] == df["context"]
             print(
                 "correct retrieval result by exhaustive search",
@@ -390,4 +395,4 @@ if __name__ == "__main__":
             )
 
         with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query)
+            scores, indices = retriever.retrieve(query, topk=2)
