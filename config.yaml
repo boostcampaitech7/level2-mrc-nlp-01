@@ -40,3 +40,6 @@ dataQA:
     # - method: your-augementation-method
     #   params:
     #     p: 0.0
+
+testing:
+  

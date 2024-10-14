@@ -2,10 +2,13 @@ import os
 import sys
 import random
 import logging
-
+import argparse
 import numpy as np
 import torch
-from datasets import load_from_disk, load_metric
+# from datasets import load_from_disk, load_metric 
+from datasets import load_from_disk
+from evaluate import load as load_metric
+
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
@@ -54,14 +57,29 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     
-    parser = HfArgumentParser((TrainingArguments))
-    training_args = parser.parse_args_into_dataclasses()[0]
-
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--testing", action='store_true', help="Use only 1% of the dataset for testing")
+    args, unknown = arg_parser.parse_known_args()    
+    
+    parser = HfArgumentParser((TrainingArguments,))
+    training_args = parser.parse_args_into_dataclasses(unknown)[0]
     training_args = set_hyperparameters(config, training_args)
     
     logger.info("Training/evaluation parameters %s", training_args)
     
     datasets = load_from_disk(config.dataQA.path())
+    
+    if args.testing:
+        # 1%만 선택
+        num_train_samples = len(datasets['train'])
+        num_valid_samples = len(datasets["validation"])
+        test_samples = int(0.01 * num_train_samples)
+        valid_samples = int(0.01 * num_valid_samples)
+        
+        datasets["train"] = datasets["train"].select(range(test_samples))
+        datasets["validation"] = datasets["validation"].select(range(valid_samples))
+    
+    
     print(datasets)
     
     config_hf = AutoConfig.from_pretrained(config.model.name())
