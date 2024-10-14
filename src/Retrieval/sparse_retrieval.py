@@ -463,12 +463,15 @@ if __name__ == "__main__":
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False,)
-
+    
     retriever = SparseRetrieval(
         tokenize_fn=tokenizer.tokenize,
-        data_path=args.data_path,
         context_path=args.context_path,
     )
+
+    retriever.get_sparse_embedding()
+    if args.use_faiss:
+        retriever.build_faiss()
 
     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
 
