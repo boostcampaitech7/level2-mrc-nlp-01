@@ -15,14 +15,14 @@ training:
 
 dataRetrieval:
   eval: True
-  context_path: ../data/wikipedia_documents.json
+  context_path: ./data/wikipedia_documents.json
   top_k: 5
   faiss:
     use: False
     num_clusters: 64
 
 dataQA:
-  path: ../data/train_dataset
+  path: ./data/train_dataset
   tokenizer:
     max_seq_length: 384
     max_answer_length: 30
