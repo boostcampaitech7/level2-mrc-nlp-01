@@ -32,6 +32,16 @@ def set_all_seed(seed, deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+def set_hyperparameters(config, training_args):
+    training_args.num_train_epochs = config.training.epochs()
+    training_args.per_device_train_batch_size = config.training.batch_size()
+    training_args.per_device_eval_batch_size = config.training.batch_size()
+    training_args.learning_rate = float(config.training.learning_rate())
+    training_args.weight_decay = float(config.training.weight_decay())
+    training_args.lr_scheduler_type  = config.training.scheduler()
+
+    return training_args
+
 def main():
     config = Config()
     
@@ -46,6 +56,8 @@ def main():
     
     parser = HfArgumentParser((TrainingArguments))
     training_args = parser.parse_args_into_dataclasses()[0]
+
+    training_args = set_hyperparameters(config, training_args)
     
     logger.info("Training/evaluation parameters %s", training_args)
     
