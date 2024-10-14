@@ -141,15 +141,15 @@ class DenseRetrieval:
         for epoch in range(int(args.num_train_epochs)):
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
-                    p_inputs = {'input_ids': batch[0].to(args.device), 'attention_mask': batch[1].to(args.device)}
-                    q_inputs = {'input_ids': batch[2].to(args.device), 'attention_mask': batch[3].to(args.device)}
+                    p_inputs = {'input_ids': batch[0].to(self.device), 'attention_mask': batch[1].to(self.device)}
+                    q_inputs = {'input_ids': batch[2].to(self.device), 'attention_mask': batch[3].to(self.device)}
 
                     p_outputs = self.p_encoder(**p_inputs)
                     q_outputs = self.q_encoder(**q_inputs)
 
                     # Calculate similarity scores and loss
                     sim_scores = torch.matmul(q_outputs, p_outputs.transpose(0, 1))
-                    targets = torch.arange(sim_scores.size(0)).long().to(args.device)
+                    targets = torch.arange(sim_scores.size(0)).long().to(self.device)
                     sim_scores = sim_scores.view(sim_scores.size(0), -1)
                     loss = torch.nn.functional.cross_entropy(sim_scores, targets)
 
@@ -212,9 +212,6 @@ class DenseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        if args is None:
-            args = self.args
-
         self.p_encoder.eval()
         self.q_encoder.eval()
 
@@ -224,9 +221,9 @@ class DenseRetrieval:
             q_embedding = self.q_encoder(**q_seqs)
 
             p_embeddings = []
-            for batch in DataLoader(self.dataset, batch_size=args.per_device_eval_batch_size):
+            for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
                 p_seqs = self.tokenizer(batch['context'], padding=True, truncation=True, return_tensors="pt")
-                p_seqs = {key: val.to(args.device) for key, val in p_seqs.items()}
+                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
                 p_embeddings.append(self.p_encoder(**p_seqs))
 
             p_embeddings = torch.cat(p_embeddings, dim=0)
