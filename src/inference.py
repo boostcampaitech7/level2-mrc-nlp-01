@@ -2,10 +2,13 @@ import os
 import sys
 import random
 import logging
-
+import argparse
 import numpy as np
 import torch
-from datasets import load_from_disk, load_metric
+
+from datasets import load_from_disk
+from evaluate import load as load_metric
+
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
@@ -21,6 +24,8 @@ from QuestionAnswering.utils import check_no_error
 from QuestionAnswering.trainer import QuestionAnsweringTrainer
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
+from dataclasses import dataclass, field
+
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -31,6 +36,11 @@ def set_all_seed(seed, deterministic=False):
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+@dataclass
+class DataArguments:
+    dataset_name: str = field(default=None, metadata={"help": "The name of the dataset to use."})
+    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
 
 def main():
     config = Config()
@@ -44,13 +54,23 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     
-    parser = HfArgumentParser((TrainingArguments))
-    training_args = parser.parse_args_into_dataclasses()[0]
+    parser = HfArgumentParser((TrainingArguments, DataArguments))
+    training_args, data_args = parser.parse_args_into_dataclasses()
     training_args.do_train = True
     
     logger.info("Training/evaluation parameters %s", training_args)
     
-    datasets = load_from_disk(config.dataQA.path())
+    if data_args.dataset_name:
+        datasets = load_from_disk(data_args.dataset_name)
+    else:
+        datasets = load_from_disk(config.dataQA.path())
+    
+    if data_args.testing:
+        # 1%만 선택
+        num_valid_samples = len(datasets["validation"])
+        valid_samples = int(0.01 * num_valid_samples)
+        datasets["validation"] = datasets["validation"].select(range(valid_samples))
+        
     print(datasets)
     
     config_hf = AutoConfig.from_pretrained(config.model.name())
@@ -61,6 +81,7 @@ def main():
         retriever = SparseRetrieval(
             tokenize_fn=tokenizer.tokenize,
             context_path=config.dataRetrieval.context_path(),
+            testing = data_args.testing
         )
         datasets = retriever.run(datasets, training_args, config)
 
