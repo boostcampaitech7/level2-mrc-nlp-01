@@ -69,6 +69,7 @@ class DenseRetrieval:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dataset = load_from_disk("./data/train_dataset/")['train']
+        self.max_len = 512
         
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
@@ -76,7 +77,7 @@ class DenseRetrieval:
         self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
 
-        self.num_negatives = num_negatives
+        self.num_negatives = 2
 
         self.args = TrainingArguments(
             output_dir="dense_retireval",
@@ -88,49 +89,37 @@ class DenseRetrieval:
             weight_decay=0.01
         )
 
-        self.prepare_in_batch_negative(dataset=self.dataset, num_neg=self.num_negatives)
-
-    def prepare_in_batch_negative(self, dataset, num_neg):
+    def prepare_in_batch_negative(self, dataset=None, num_neg=None):
         if dataset is None:
             dataset = self.dataset
         if num_neg is None:
             num_neg = self.num_negatives
 
-        questions = []
-        contexts = []
-        labels = []
-
         corpus = np.array(self.contexts)
+        p_with_neg = []
 
-        for idx, example in enumerate(dataset):
-            question = example['question']
-            context = example['context']
-            questions.append(question)
-            contexts.append(context)
-            labels.append(1)
+        for c in dataset["context"]:
 
-            # Add negative samples
             while True:
                 neg_idxs = np.random.randint(len(corpus), size=num_neg)
-                neg_samples = corpus[neg_idxs]
-                
-                if context not in neg_samples:
-                    for neg_context in neg_samples:
-                        questions.append(question)
-                        contexts.append(neg_context)
-                        labels.append(0)
+
+                if not c in corpus[neg_idxs]:
+                    p_neg = corpus[neg_idxs]
+
+                    p_with_neg.append(c)
+                    p_with_neg.extend(p_neg)
                     break
-    
-        max_length = 512
 
-        q_seqs = self.tokenizer(questions, padding="max_length", truncation=True, max_length = max_length, return_tensors='pt')
-        p_seqs = self.tokenizer(contexts, padding="max_length", truncation=True, max_length = max_length, return_tensors='pt')
+        q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
+        p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
 
-        labels = torch.tensor(labels)
+        p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
+        p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
+        p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+
         train_dataset = TensorDataset(
             q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
             p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
-            labels
         )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
@@ -140,6 +129,8 @@ class DenseRetrieval:
             args = self.args
 
         batch_size = args.per_device_train_batch_size
+
+        self.prepare_in_batch_negative()
 
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
@@ -162,55 +153,52 @@ class DenseRetrieval:
         self.q_encoder.zero_grad()
         torch.cuda.empty_cache()
 
-        accumulation_steps = 4  # 그래디언트 누적 단계 설정
-        optimizer.zero_grad()
-
-        train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
-        for _ in train_iterator:
+        for i in tqdm(range(int(args.num_train_epochs)), desc="Epoch"):
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
-                for step, batch in enumerate(tepoch):
+                for batch in tepoch:
+
                     self.p_encoder.train()
                     self.q_encoder.train()
 
-                    batch = tuple(t.to(self.device) for t in batch)
-
-                    p_inputs = {
-                    "input_ids": batch[0].to(self.device),
-                    "attention_mask": batch[1].to(self.device),
-                    "token_type_ids": batch[2].to(self.device)
-                    }
+                    targets = torch.zeros(batch_size).long() # 각 데이터 모두 index 0 이 정답 -> [0, 0, 0, ... 0, 0, 0]
+                    targets = targets.to(self.device)
 
                     q_inputs = {
-                        "input_ids": batch[3].to(self.device),
-                        "attention_mask": batch[4].to(self.device),
-                        "token_type_ids": batch[5].to(self.device)
+                        "input_ids": batch[0].to(self.device),
+                        "attention_mask": batch[1].to(self.device),
+                        "token_type_ids": batch[2].to(self.device)
                     }
-                    labels = batch[6].float()
 
-                    # Calculate similarity scores
-                    p_outputs = self.p_encoder(**p_inputs)
+                    p_inputs = {
+                        "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                        "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                        "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                    }
+
                     q_outputs = self.q_encoder(**q_inputs)
+                    p_outputs = self.p_encoder(**p_inputs)
 
-                    # Calculate loss
-                    loss = F.cosine_embedding_loss(q_outputs, p_outputs, labels)
-                    loss = loss / accumulation_steps  # 손실을 누적 단계로 나눔
+                    q_outputs = q_outputs.view(batch_size, 1, -1)
+                    p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
 
-                    tepoch.set_postfix(loss=loss.item() * accumulation_steps)
+                    sim_scores = torch.bmm(p_outputs, q_outputs.transpose(1, 2)).squeeze()
+                    sim_scores = sim_scores.view(batch_size, -1)
+                    sim_scores = F.log_softmax(sim_scores, dim=1)
+                
+                    loss = F.nll_loss(sim_scores, targets)
+                    tepoch.set_postfix(loss=f"{str(loss.item())}", step=f"{global_step+1}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
 
                     loss.backward()
+                    optimizer.step()
+                    scheduler.step()
 
-                    if (step + 1) % accumulation_steps == 0:
-                        optimizer.step()
-                        scheduler.step()
-                        optimizer.zero_grad()
-                        global_step += 1
+                    self.p_encoder.zero_grad()
+                    self.q_encoder.zero_grad()
+
+                    global_step += 1
 
                     torch.cuda.empty_cache()
-
-        if (step + 1) % accumulation_steps != 0:
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+                    del p_inputs, q_inputs
 
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
@@ -269,7 +257,7 @@ class DenseRetrieval:
         
         self.q_encoder.eval()
         with torch.no_grad():
-            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt")
+            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embedding = self.q_encoder(**q_seqs)
 
@@ -296,13 +284,13 @@ class DenseRetrieval:
         self.q_encoder.eval()
 
         with torch.no_grad():
-            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt")
+            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embeddings = self.q_encoder(**q_seqs)
 
             p_embeddings = []
             for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
-                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt")
+                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
                 p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
                 p_embeddings.append(self.p_encoder(**p_seqs))
 
