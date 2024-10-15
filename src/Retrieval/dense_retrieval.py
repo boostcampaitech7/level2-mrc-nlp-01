@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
-from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertConfig, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 
 @contextmanager
 def timer(name):
@@ -206,10 +206,10 @@ class DenseRetrieval:
             
         else:
             print("Build passage embedding")
-            self.encoder.eval
+            self.encoder.eval()
             p_embeddings = []
-            for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
-                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
+            for batch in DataLoader(self.contexts, batch_size=self.args.per_device_eval_batch_size):
+                p_seqs = self.tokenizer(batch, padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
                 p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
                 p_embeddings.append(self.encoder(**p_seqs))
 
@@ -291,10 +291,18 @@ class DenseRetrieval:
         """
         self.encoder.eval()
 
+        batch_size = 16  # Adjust this value based on your memory constraints
+        q_embeddings = []
+
         with torch.no_grad():
-            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
-            q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_embeddings = self.encoder(**q_seqs).cpu()
+            for i in range(0, len(queries), batch_size):
+                batch_queries = queries[i:i+batch_size]
+                q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
+                q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
+                batch_embeddings = self.encoder(**q_seqs).cpu()
+                q_embeddings.append(batch_embeddings)
+
+            q_embeddings = torch.cat(q_embeddings, dim=0)
 
             sim_scores = torch.matmul(q_embeddings, self.p_embeddings.transpose(0, 1))
             doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
