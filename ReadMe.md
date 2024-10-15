@@ -47,8 +47,8 @@
 
 # 실행 방법
 - train의 경우
-    python train.py --output_dir ./models/train_dataset --do_train `--testing`(선택)
+    python src/train.py --output_dir ./models/train_dataset --do_train `--testing`(선택)
 - eval의 경우
-    python train.py --output_dir ./outputs/train_dataset  --do_eval `--testing`(선택)
+    python src/train.py --output_dir ./outputs/train_dataset  --do_eval `--testing`(선택)
 - inference의 경우
-    python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset  --do_predict `--testing`(선택)
+    python src/inference.py --output_dir ./outputs/test_dataset/ --dataset_name ./data/test_dataset  --do_predict `--testing`(선택)
