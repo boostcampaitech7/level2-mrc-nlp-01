@@ -4,7 +4,7 @@ model:
 seed: 42
 
 training:
-  epochs: 1 # HF default = 3
+  epochs: 3 # HF default = 3
   batch_size: 32 # HF default = 8
   learning_rate: 5e-5 # HF default = 5e-5
   optimizer: AdamW # HF default = AdamW
@@ -18,7 +18,7 @@ dataRetrieval:
   context_path: ./data/wikipedia_documents.json
   top_k: 5
   faiss:
-    use: False
+    use: True
     num_clusters: 64
 
 dataQA:
