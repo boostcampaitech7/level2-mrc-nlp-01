@@ -89,7 +89,7 @@ def main():
     last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer) 
     
     if not (training_args.do_train or training_args.do_eval):
-        return
+        return print('there is no command --do_train or --do_eval')
         
     wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
     column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
