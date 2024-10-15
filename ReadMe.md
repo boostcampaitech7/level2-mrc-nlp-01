@@ -52,3 +52,10 @@
     python train.py --output_dir ./outputs/train_dataset  --do_eval `--testing`(선택)
 - inference의 경우
     python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset  --do_predict `--testing`(선택)
+
+
+- 기능 추가: `sparseDense_retrieval.py`
+    - 기존의 `sparse_retrieval.py` 와 `dense_retrieval.py` 에서 두 가지 방법을 모두 사용하여 결과를 출력하는 코드 추가
+    - 두 가지 방법의 결과를 합쳐서 출력하는 코드 추가
+    
+
