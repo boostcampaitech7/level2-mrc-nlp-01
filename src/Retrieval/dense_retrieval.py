@@ -14,7 +14,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
-from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW
+from tqdm import trange
+from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 
 @contextmanager
 def timer(name):
@@ -23,7 +24,6 @@ def timer(name):
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 class BertEncoder(BertPreTrainedModel):
-
     def __init__(self,
         config
     ):
@@ -69,12 +69,15 @@ class DenseRetrieval:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dataset = load_from_disk("./data/train_dataset/")['train']
+        
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
         self.p_embeddings = None
         self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
+
         self.num_negatives = num_negatives
+
         self.args = TrainingArguments(
             output_dir="dense_retireval",
             evaluation_strategy="epoch",
@@ -84,10 +87,10 @@ class DenseRetrieval:
             num_train_epochs=2,
             weight_decay=0.01
         )
-        self.prepare_in_batch_negative(dataset=self.dataset ,num_neg=self.num_negatives)
+
+        self.prepare_in_batch_negative(dataset=self.dataset, num_neg=self.num_negatives)
 
     def prepare_in_batch_negative(self, dataset, num_neg):
-        
         if dataset is None:
             dataset = self.dataset
         if num_neg is None:
@@ -97,28 +100,37 @@ class DenseRetrieval:
         contexts = []
         labels = []
 
+        corpus = np.array(self.contexts)
+
         for idx, example in enumerate(dataset):
             question = example['question']
             context = example['context']
             questions.append(question)
             contexts.append(context)
-            labels.append(idx)
+            labels.append(1)
 
             # Add negative samples
-            neg_indices = [i for i in range(len(dataset)) if i != idx]
-            neg_samples = random.sample(neg_indices, num_neg)
-            for neg_idx in neg_samples:
-                questions.append(question)
-                contexts.append(dataset[neg_idx]['context'])
-                labels.append(idx)
+            while True:
+                neg_idxs = np.random.randint(len(corpus), size=num_neg)
+                neg_samples = corpus[neg_idxs]
+                
+                if context not in neg_samples:
+                    for neg_context in neg_samples:
+                        questions.append(question)
+                        contexts.append(neg_context)
+                        labels.append(0)
+                    break
+    
+        max_length = 512
 
-        q_seqs = self.tokenizer(questions, padding=True, truncation=True, return_tensors="pt")
-        p_seqs = self.tokenizer(contexts, padding=True, truncation=True, return_tensors="pt")
+        q_seqs = self.tokenizer(questions, padding="max_length", truncation=True, max_length = max_length, return_tensors='pt')
+        p_seqs = self.tokenizer(contexts, padding="max_length", truncation=True, max_length = max_length, return_tensors='pt')
 
+        labels = torch.tensor(labels)
         train_dataset = TensorDataset(
-            p_seqs['input_ids'].to(self.device), p_seqs['attention_mask'].to(self.device),
-            q_seqs['input_ids'].to(self.device), q_seqs['attention_mask'].to(self.device),
-            torch.tensor(labels).to(self.device)
+            q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
+            p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
+            labels
         )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
@@ -127,6 +139,8 @@ class DenseRetrieval:
         if args is None:
             args = self.args
 
+        batch_size = args.per_device_train_batch_size
+
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
             {'params': [p for n, p in self.p_encoder.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
@@ -134,31 +148,69 @@ class DenseRetrieval:
             {'params': [p for n, p in self.q_encoder.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
             {'params': [p for n, p in self.q_encoder.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+        t_total = len(self.train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=args.warmup_steps,
+            num_training_steps=t_total
+        )
 
-        self.p_encoder.train()
-        self.q_encoder.train()
+        global_step = 0
 
-        for epoch in range(int(args.num_train_epochs)):
+        self.p_encoder.zero_grad()
+        self.q_encoder.zero_grad()
+        torch.cuda.empty_cache()
+
+        accumulation_steps = 4  # 그래디언트 누적 단계 설정
+        optimizer.zero_grad()
+
+        train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
+        for _ in train_iterator:
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
-                for batch in tepoch:
-                    p_inputs = {'input_ids': batch[0].to(self.device), 'attention_mask': batch[1].to(self.device)}
-                    q_inputs = {'input_ids': batch[2].to(self.device), 'attention_mask': batch[3].to(self.device)}
+                for step, batch in enumerate(tepoch):
+                    self.p_encoder.train()
+                    self.q_encoder.train()
 
+                    batch = tuple(t.to(self.device) for t in batch)
+
+                    p_inputs = {
+                    "input_ids": batch[0].to(self.device),
+                    "attention_mask": batch[1].to(self.device),
+                    "token_type_ids": batch[2].to(self.device)
+                    }
+
+                    q_inputs = {
+                        "input_ids": batch[3].to(self.device),
+                        "attention_mask": batch[4].to(self.device),
+                        "token_type_ids": batch[5].to(self.device)
+                    }
+                    labels = batch[6].float()
+
+                    # Calculate similarity scores
                     p_outputs = self.p_encoder(**p_inputs)
                     q_outputs = self.q_encoder(**q_inputs)
 
-                    # Calculate similarity scores and loss
-                    sim_scores = torch.matmul(q_outputs, p_outputs.transpose(0, 1))
-                    targets = torch.arange(sim_scores.size(0)).long().to(self.device)
-                    sim_scores = sim_scores.view(sim_scores.size(0), -1)
-                    loss = torch.nn.functional.cross_entropy(sim_scores, targets)
+                    # Calculate loss
+                    loss = F.cosine_embedding_loss(q_outputs, p_outputs, labels)
+                    loss = loss / accumulation_steps  # 손실을 누적 단계로 나눔
+
+                    tepoch.set_postfix(loss=loss.item() * accumulation_steps)
 
                     loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad()
 
-                    tepoch.set_postfix(loss=loss.item())
+                    if (step + 1) % accumulation_steps == 0:
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
+                        global_step += 1
+
+                    torch.cuda.empty_cache()
+
+        if (step + 1) % accumulation_steps != 0:
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
@@ -201,18 +253,6 @@ class DenseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas 
         
-    def encode_passages(self):
-
-        self.p_encoder.eval()
-        with torch.no_grad():
-            p_embeddings = []
-            for batch in tqdm(DataLoader(self.dataset, batch_size=32), desc="Encoding passages"):
-                p_seqs = self.tokenizer(batch['context'], padding=True, truncation=True, return_tensors="pt")
-                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
-                p_embeddings.append(self.p_encoder(**p_seqs).cpu())
-        
-        self.p_embeddings = torch.cat(p_embeddings, dim=0)
-
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
         
         """
@@ -225,11 +265,11 @@ class DenseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         if self.p_embeddings is None:
-            self.encode_passages()
+            self.train()
         
         self.q_encoder.eval()
         with torch.no_grad():
-            q_seqs = self.tokenizer([query], padding=True, truncation=True, return_tensors="pt")
+            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt")
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embedding = self.q_encoder(**q_seqs)
 
@@ -256,13 +296,13 @@ class DenseRetrieval:
         self.q_encoder.eval()
 
         with torch.no_grad():
-            q_seqs = self.tokenizer(queries, padding=True, truncation=True, return_tensors="pt")
+            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt")
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embeddings = self.q_encoder(**q_seqs)
 
             p_embeddings = []
             for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
-                p_seqs = self.tokenizer(batch['context'], padding=True, truncation=True, return_tensors="pt")
+                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt")
                 p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
                 p_embeddings.append(self.p_encoder(**p_seqs))
 
