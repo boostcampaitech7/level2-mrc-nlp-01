@@ -155,3 +155,89 @@ class QuestionAnsweringTokenizerWrapper:
                 predictions=formatted_predictions,
                 label_ids=[{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples],
             )
+
+
+class Seq2SeqLMTokenizerWrapper:
+    def __init__(self, tokenizer, config, column_name_dict={"question": "question", "context": "context", "answers": "answers"}):
+        self.tokenizer = tokenizer
+        
+        # 컬럼 이름을 저장합니다.
+        self.question_column = column_name_dict.get("question", "question")
+        self.context_column = column_name_dict.get("context", "context")
+        self.answer_column = column_name_dict.get("answers", "answers")
+        
+        # 토크나이저 설정
+        self.max_seq_length = config.dataQA.tokenizer.max_seq_length(512)
+        self.pad_to_max_length = config.dataQA.tokenizer.pad_to_max_length(True)
+        
+    def tokenize(self, examples):
+        # 질문과 문맥을 하나의 시퀀스로 결합하여 토크나이징
+        inputs = [
+            f"question: {q} context: {c}" 
+            for q, c in zip(examples[self.question_column], examples[self.context_column])
+        ]
+        
+        # 모델 입력을 위한 토크나이징
+        model_inputs = self.tokenizer(
+            inputs,
+            max_length=self.max_seq_length,
+            truncation=True,
+            padding="max_length" if self.pad_to_max_length else False
+        )
+        
+        return model_inputs
+
+    def encode_train(self, examples):
+        """
+        학습 데이터를 인코딩합니다. 질문과 문맥을 결합한 후 답변을 레이블로 설정합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        # 답변을 레이블로 설정
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(
+                [answer["text"][0] for answer in examples[self.answer_column]], 
+                max_length=self.max_seq_length,
+                truncation=True,
+                padding="max_length" if self.pad_to_max_length else False
+            )
+        
+        tokenized_example["labels"] = labels["input_ids"]
+        return tokenized_example
+
+    def encode_valid(self, examples):
+        """
+        검증 데이터를 인코딩합니다. 학습과 동일하지만 example_id를 추가로 저장합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        # 검증을 위한 example_id 저장
+        tokenized_example["example_id"] = examples["id"]
+        
+        # 검증을 위한 레이블 설정
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(
+                [answer["text"][0] for answer in examples[self.answer_column]],
+                max_length=self.max_seq_length,
+                truncation=True,
+                padding="max_length" if self.pad_to_max_length else False
+            )
+
+        tokenized_example["labels"] = labels["input_ids"]
+        return tokenized_example
+
+    def decode(self, examples, predictions, training_args):
+        """
+        예측 결과를 디코딩하고, 평가에 적합한 포맷으로 반환합니다.
+        """
+        decoded_predictions = self.tokenizer.batch_decode(predictions, skip_special_tokens=True)
+
+        formatted_predictions = [{"id": ex["id"], "prediction_text": pred} for ex, pred in zip(examples, decoded_predictions)]
+        
+        if training_args.do_predict:
+            return formatted_predictions
+        elif training_args.do_eval:
+            return EvalPrediction(
+                predictions=formatted_predictions,
+                label_ids=[{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples],
+            )
