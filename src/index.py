@@ -7,7 +7,7 @@ import streamlit as st
 def load_pages():
     
     pwd = os.path.dirname(__file__)
-    pages_dir = os.path.join(pwd, 'page')
+    pages_dir = os.path.join(pwd, 'server/page')
     pages_files = os.listdir(pages_dir)
     
     root = None
@@ -17,7 +17,7 @@ def load_pages():
     for pages_file in pages_files:
         if pages_file.endswith('.py'):
             module_name = pages_file[:-3]
-            module = importlib.import_module(f'page.{module_name}')
+            module = importlib.import_module(f'server.page.{module_name}')
             
             for attr in dir(module):
                 obj_by_attr = getattr(module, attr)
@@ -44,8 +44,11 @@ def render_sidebar(page_name, root, file_tree, name_to_page):
             st.session_state.page = name_to_page[page_name].parent
             
     if file_tree[page_name] != []:
-        next_page = placeholder.radio("하위 페이지", tuple([page_name] + file_tree[page_name]))
-        st.session_state.page = next_page
+        page_list = [page_name] + file_tree[page_name]
+        page_alias = [name_to_page[page].alias for page in page_list]
+        alias_dict = {alias: page for alias, page in zip(page_alias, page_list)}
+        next_page = placeholder.radio("하위 페이지", tuple(page_alias))
+        st.session_state.page = alias_dict[next_page]
     
     return placeholder
 

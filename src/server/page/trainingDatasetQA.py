@@ -1,5 +1,5 @@
 import streamlit as st
-from page.Page import Page
+from server.page.Page import Page
 from datasets import load_from_disk
 
 class TrainingDatasetQAPage(Page):
