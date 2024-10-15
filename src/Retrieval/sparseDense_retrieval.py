@@ -27,6 +27,8 @@ class SparseDenseRetrieval:
         ratio: float = 0.5,
         context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
+        if not 0 <= ratio <= 1:
+            raise ValueError("ratio must be between 0 and 1")
 
         """
         Arguments:
@@ -81,9 +83,9 @@ class SparseDenseRetrieval:
 
         if isinstance(query_or_dataset, str):
             return self.retrieve_single(query_or_dataset, topk=topk)
-
         elif isinstance(query_or_dataset, Dataset):
             return self.retrieve_multi(query_or_dataset, topk=topk)
+
 
 
     def retrieve_single(self, query: str, topk: Optional[int] = 1) -> Tuple[List, List]:
@@ -131,7 +133,50 @@ class SparseDenseRetrieval:
         return [score for score, _ in merged_scores[:topk]], [idx for _, idx in merged_scores[:topk]]
 
 
-
-
-
-# 메인 실행 부분은 필요에 따라 추가할 수 있습니다.
+    def run(self, datasets, training_args, config):
+        # Sparse와 Dense 임베딩
+        self.sparse_retriever.get_sparse_embedding()
+        self.dense_retriever.get_dense_embedding()
+        
+        if config.dataRetrieval.faiss.use(False):
+            self.sparse_retriever.build_faiss(
+                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
+            )
+            self.dense_retriever.build_faiss(
+                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
+            )
+            df = self.retrieve_faiss(
+                datasets["validation"],
+                topk=config.dataRetrieval.top_k(5),
+            )
+        else:
+            df = self.retrieve(
+                datasets["validation"],
+                topk=config.dataRetrieval.top_k(5),
+            )
+        
+        if training_args.do_predict:
+            f = Features(
+                {
+                    "context": Value(dtype="string", id=None),
+                    "id": Value(dtype="string", id=None),
+                    "question": Value(dtype="string", id=None),
+                }
+            )
+        elif training_args.do_eval:
+            f = Features(
+                {
+                    "answers": Sequence(
+                        feature={
+                            "text": Value(dtype="string", id=None),
+                            "answer_start": Value(dtype="int32", id=None),
+                        },
+                        length=-1,
+                        id=None,
+                    ),
+                    "context": Value(dtype="string", id=None),
+                }
+            )
+        
+        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+        return datasets
