@@ -172,6 +172,7 @@ class SparseRetrieval:
         # BM25는 p_embedding 필요 없음. BM25는 쿼리가 주어질 때마다 점수를 계산하기 때문...
 
         if isinstance(query_or_dataset, str):
+            # 단일 쿼리 처리 (변경 없음)
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
             print("[Search query]\n", query_or_dataset, "\n")
 
@@ -182,19 +183,32 @@ class SparseRetrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
+            # 저장된 결과 파일 이름 (예: 'retrieval_results.pkl')
+            results_filename = "retrieval_results.pkl"
+
+            # 저장된 결과가 있는지 확인
+            if os.path.exists(results_filename):
+                with open(results_filename, 'rb') as f:
+                    doc_scores, doc_indices = pickle.load(f)
+                print("Loaded pre-computed retrieval results.")
+            else:
+                # 저장된 결과가 없으면 검색을 수행하고 결과를 저장
+                with timer("query exhaustive search"):
+                    doc_scores, doc_indices = self.get_relevant_doc_bulk(
+                        query_or_dataset["question"], k=topk
+                    )
+                
+                # 결과 저장
+                with open(results_filename, 'wb') as f:
+                    pickle.dump((doc_scores, doc_indices), f)
+                print("Computed and saved retrieval results.")
 
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
-            with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk(
-                    query_or_dataset["question"], k=topk
-                )
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Sparse retrieval: ")
-            ):
+            for idx, example in enumerate(tqdm(query_or_dataset, desc="Sparse retrieval: ")):
                 print('debug:', idx, example)
                 print('doc_indices shape:', np.array(doc_indices).shape)
-                print('doc_indices for this example:', doc_indices[idx])
+                print('doc_indices for this example:', doc_indices[idx][0])
                 print('self.contexts length:', len(self.contexts))
                 tmp = {
                     # Query와 해당 id를 반환합니다.
@@ -202,7 +216,7 @@ class SparseRetrieval:
                     "id": example["id"],
                     # Retrieve한 Passage의 id, context를 반환합니다.
                     "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
+                        [self.contexts[pid] for pid in doc_indices[idx][0]]
                     ),
                 }
                 if "context" in example.keys() and "answers" in example.keys():
