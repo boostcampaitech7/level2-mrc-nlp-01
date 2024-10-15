@@ -289,6 +289,8 @@ class DenseRetrieval:
             Tuple[List[List[float]], List[List[int]]]:
                 각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
         """
+        self.get_dense_embedding()
+
         self.encoder.eval()
 
         batch_size = 16  # Adjust this value based on your memory constraints
