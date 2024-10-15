@@ -16,7 +16,7 @@ training:
 dataRetrieval:
   eval: True
   context_path: ./data/wikipedia_documents.json
-  top_k: 5
+  top_k: 10
   faiss:
     use: False
     num_clusters: 64

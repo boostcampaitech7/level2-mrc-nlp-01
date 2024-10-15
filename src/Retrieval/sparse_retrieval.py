@@ -101,7 +101,7 @@ class SparseRetrieval:
             print("BM25 pickle loaded.")
         else:
             print("Build BM25 embedding")
-            tokenized_contexts = [self.tokenize_fn(doc) for doc in self.contexts]
+            tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
             self.bm25 = BM25Okapi(tokenized_contexts)
             with open(emd_path, "wb") as file:
                 pickle.dump(self.bm25, file)
@@ -191,8 +191,18 @@ class SparseRetrieval:
                 with open(results_filename, 'rb') as f:
                     doc_scores, doc_indices = pickle.load(f)
                 print("Loaded pre-computed retrieval results.")
+                
+                # 저장된 결과의 길이 확인
+                if len(doc_indices) != len(query_or_dataset):
+                    print("Saved results do not match the current dataset. Recomputing...")
+                    compute_new_results = True
+                else:
+                    compute_new_results = False
             else:
-                # 저장된 결과가 없으면 검색을 수행하고 결과를 저장
+                compute_new_results = True
+
+            if compute_new_results:
+                # 결과를 새로 계산
                 with timer("query exhaustive search"):
                     doc_scores, doc_indices = self.get_relevant_doc_bulk(
                         query_or_dataset["question"], k=topk
@@ -203,20 +213,28 @@ class SparseRetrieval:
                     pickle.dump((doc_scores, doc_indices), f)
                 print("Computed and saved retrieval results.")
 
+            # 디버깅을 위한 출력 추가
+            print("Shape of doc_indices:", np.array(doc_indices).shape)
+            print("Length of query_or_dataset:", len(query_or_dataset))
+
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             for idx, example in enumerate(tqdm(query_or_dataset, desc="Sparse retrieval: ")):
-                print('debug:', idx, example)
-                print('doc_indices shape:', np.array(doc_indices).shape)
-                print('doc_indices for this example:', doc_indices[idx][0])
-                print('self.contexts length:', len(self.contexts))
+                if idx >= len(doc_indices):
+                    print(f"Error: idx {idx} is out of range for doc_indices")
+                    break
+                # print('debug:', idx, example)
+                # print('doc_indices:', doc_indices)
+                # print('doc_indices shape:', np.array(doc_indices).shape)
+                # print('doc_indices for this example:', doc_indices[idx])
+                # print('self.contexts length:', len(self.contexts))
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": example["question"],
                     "id": example["id"],
                     # Retrieve한 Passage의 id, context를 반환합니다.
                     "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx][0]]
+                        [self.contexts[pid] for pid in doc_indices[idx]]
                     ),
                 }
                 if "context" in example.keys() and "answers" in example.keys():
@@ -228,53 +246,30 @@ class SparseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas
 
-    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
-
-        """
-        Arguments:
-            query (str):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
-        print("get_relevant_doc 실행")
-        tokenized_query = self.tokenize_fn(query)
-        doc_scores = self.bm25.get_scores(tokenized_query)
-        sorted_result = np.argsort(doc_scores)[::-1]
-        doc_scores = doc_scores[sorted_result].tolist()[:k]
-        doc_indices = sorted_result.tolist()[:k]
-        print("get_relevant_doc 마침")
-        return doc_scores, doc_indices
-        
-        
-
     def get_relevant_doc_bulk(
         self, queries: List, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
-
+        ) -> Tuple[List, List]:
         """
         Arguments:
             queries (List):
-                하나의 Query를 받습니다.
+                여러 개의 Query를 받습니다.
             k (Optional[int]): 1
                 상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
+        doc_scores = []
+        doc_indices = []
+        print('get_relevant_doc_bulk실행중 queries의 개수는 ',len(queries))
+        print('get_relevant_doc_bulk실행중 queries의 type은 ',type(queries))
 
-        tokenized_queries = [self.tokenize_fn(query) for query in queries]
-        doc_scores = []
-        doc_indices = []
-        doc_scores = []
-        doc_indices = []
-        for tokenized_query in tokenized_queries:
+        for query in tqdm(queries, desc="Processing queries"):
+            tokenized_query = self.tokenize_fn(query)
             scores = self.bm25.get_scores(tokenized_query)
             sorted_result = np.argsort(scores)[::-1]
-        doc_scores.append(scores[sorted_result].tolist()[:k])
-        doc_indices.append(sorted_result.tolist()[:k])
+            doc_scores.append(scores[sorted_result][:k].tolist())
+            doc_indices.append(sorted_result[:k].tolist())
+        
         return doc_scores, doc_indices
+        
     
     
     def retrieve_faiss(
