@@ -12,6 +12,7 @@ import pandas as pd
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
+from rank_bm25 import BM25Okapi
 
 seed = 2024
 random.seed(seed) # python random seed 고정
@@ -81,6 +82,8 @@ class SparseRetrieval:
 
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
+        self.bm25 = None # BM25 모델을 저장할 변수
+
 
     def get_sparse_embedding(self) -> NoReturn:
 
@@ -92,26 +95,20 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장합니다.
-        pickle_name = f"sparse_embedding.bin"
-        tfidfv_name = f"tfidv.bin"
+        pickle_name = f"bm25_sparse_embedding.bin"
         emd_path = os.path.join(self.data_path, pickle_name)
-        tfidfv_path = os.path.join(self.data_path, tfidfv_name)
 
-        if os.path.isfile(emd_path) and os.path.isfile(tfidfv_path):
+        if os.path.isfile(emd_path) :
             with open(emd_path, "rb") as file:
-                self.p_embedding = pickle.load(file)
-            with open(tfidfv_path, "rb") as file:
-                self.tfidfv = pickle.load(file)
-            print("Embedding pickle load.")
+                self.bm25 = pickle.load(file)
+            print("BM25 pickle loaded.")
         else:
-            print("Build passage embedding")
-            self.p_embedding = self.tfidfv.fit_transform(self.contexts)
-            print(self.p_embedding.shape)
+            print("Build BM25 embedding")
+            tokenized_contexts = [self.tokenize_fn(doc) for doc in self.contexts]
+            self.bm25 = BM25Okapi(tokenized_contexts)
             with open(emd_path, "wb") as file:
-                pickle.dump(self.p_embedding, file)
-            with open(tfidfv_path, "wb") as file:
-                pickle.dump(self.tfidfv, file)
-            print("Embedding pickle saved.")
+                pickle.dump(self.bm25, file)
+                print("BM25 pickle saved.")
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
