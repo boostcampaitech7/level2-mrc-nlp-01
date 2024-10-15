@@ -73,9 +73,9 @@ class DenseRetrieval:
         
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
-        self.p_embeddings = None
         self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
+        self.p_embeddings = None
 
         self.num_negatives = 2
 
@@ -84,8 +84,8 @@ class DenseRetrieval:
             evaluation_strategy="epoch",
             learning_rate=2e-5,
             per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
-            num_train_epochs=2,
+            per_device_eval_batch_size=1,
+            num_train_epochs=1,
             weight_decay=0.01
         )
 
@@ -200,13 +200,31 @@ class DenseRetrieval:
                     torch.cuda.empty_cache()
                     del p_inputs, q_inputs
 
+        self.q_encoder.save_pretrained(os.path.join(self.data_path, f"q_encoder"))
+        self.p_encoder.save_pretrained(os.path.join(self.data_path, f"p_encoder"))
+
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
         pass
+    
+    def get_dense_embedding(self):
+        if self.p_embeddings is not None:
+            return
+            
+        else:
+            print("Build passage embedding")
+            p_encoder = self.p_encoder
+            p_embeddings = []
+            for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
+                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
+                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
+                p_embeddings.append(p_encoder(**p_seqs))
 
-    def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
-    ) -> Union[Tuple[List, List], pd.DataFrame]:
+            p_embeddings = torch.cat(p_embeddings, dim=0)
+            self.p_embeddings = p_embeddings
+
+
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
             print("[Search query]\n", query_or_dataset, "\n")
@@ -239,7 +257,7 @@ class DenseRetrieval:
                 total.append(tmp)
 
             cqas = pd.DataFrame(total)
-            return cqas 
+            return cqas
         
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
         
@@ -252,23 +270,24 @@ class DenseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-        if self.p_embeddings is None:
-            self.train()
+        q_encoder = self.q_encoder
+        p_encoder = self.p_encoder
         
-        self.q_encoder.eval()
+        self.get_dense_embedding()
+
+        q_encoder.eval()
+
         with torch.no_grad():
             q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_embedding = self.q_encoder(**q_seqs)
+            q_embedding = q_encoder(**q_seqs)
 
-            sim_scores = torch.matmul(q_embedding.cpu(), self.p_embeddings.transpose(0, 1)).squeeze()
+            sim_scores = torch.matmul(q_embedding, self.p_embeddings.transpose(0, 1)).squeeze()
             doc_score, doc_indices = torch.topk(sim_scores, k=k)
 
         return doc_score.tolist(), doc_indices.tolist()
 
-    def get_relevant_doc_bulk(
-        self, queries: List[str], k: Optional[int] = 1
-    ) -> Tuple[List[List[float]], List[List[int]]]:
+    def get_relevant_doc_bulk(self, queries: List[str], k: Optional[int] = 1) -> Tuple[List[List[float]], List[List[int]]]:
         """
         Arguments:
             queries (List[str]):
@@ -279,41 +298,41 @@ class DenseRetrieval:
             Tuple[List[List[float]], List[List[int]]]:
                 각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
         """
+        q_encoder = self.q_encoder
+        p_encoder = self.p_encoder
 
-        self.p_encoder.eval()
-        self.q_encoder.eval()
+        self.get_dense_embedding()
 
-        with torch.no_grad():
-            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
-            q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_embeddings = self.q_encoder(**q_seqs)
+        q_encoder.eval()
+        p_encoder.eval()
 
-            p_embeddings = []
-            for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
-                p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
-                p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
-                p_embeddings.append(self.p_encoder(**p_seqs))
+        batch_size = 16  # Adjust this value based on your GPU memory
 
-            p_embeddings = torch.cat(p_embeddings, dim=0)
+        all_doc_scores = []
+        all_doc_indices = []
 
-            sim_scores = torch.matmul(q_embeddings, p_embeddings.transpose(0, 1))
-            doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
+        for i in range(0, len(queries), batch_size):
+            batch_queries = queries[i:i+batch_size]
+            with torch.no_grad():
+                q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
+                q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
+                q_embeddings = q_encoder(**q_seqs)
 
-            return doc_score.tolist(), doc_indices.tolist()
+                sim_scores = torch.matmul(q_embeddings, self.p_embeddings.transpose(0, 1))
+                doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
+
+                all_doc_scores.extend(doc_score.tolist())
+                all_doc_indices.extend(doc_indices.tolist())
+
+        return all_doc_scores, all_doc_indices
     
-    def retrieve_faiss(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
-    ) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve_faiss(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
         pass
 
-    def get_relevant_doc_faiss(
-        self, query: str, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
+    def get_relevant_doc_faiss(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
         pass
 
-    def get_relevant_doc_bulk_faiss(
-        self, queries: List, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
+    def get_relevant_doc_bulk_faiss(self, queries: List, k: Optional[int] = 1) -> Tuple[List, List]:
         pass
     
     def run(self, datasets, training_args, config):
