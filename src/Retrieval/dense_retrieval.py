@@ -263,7 +263,7 @@ class DenseRetrieval:
 
     def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
         
-        assert self.p_embedding is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
+        assert self.p_embeddings is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
 
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
