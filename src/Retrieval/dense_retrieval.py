@@ -73,8 +73,7 @@ class DenseRetrieval:
         
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
-        self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
-        self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
+        self.encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.p_embeddings = None
 
         self.num_negatives = 2
@@ -134,10 +133,8 @@ class DenseRetrieval:
 
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in self.p_encoder.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
-            {'params': [p for n, p in self.p_encoder.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
-            {'params': [p for n, p in self.q_encoder.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
-            {'params': [p for n, p in self.q_encoder.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            {'params': [p for n, p in self.encoder.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+            {'params': [p for n, p in self.encoder.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
         t_total = len(self.train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
@@ -149,16 +146,14 @@ class DenseRetrieval:
 
         global_step = 0
 
-        self.p_encoder.zero_grad()
-        self.q_encoder.zero_grad()
+        self.encoder.zero_grad()
         torch.cuda.empty_cache()
 
         for i in tqdm(range(int(args.num_train_epochs)), desc="Epoch"):
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
 
-                    self.p_encoder.train()
-                    self.q_encoder.train()
+                    self.encoder.train()
 
                     targets = torch.zeros(batch_size).long() # 각 데이터 모두 index 0 이 정답 -> [0, 0, 0, ... 0, 0, 0]
                     targets = targets.to(self.device)
@@ -175,8 +170,8 @@ class DenseRetrieval:
                         "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
                     }
 
-                    q_outputs = self.q_encoder(**q_inputs)
-                    p_outputs = self.p_encoder(**p_inputs)
+                    q_outputs = self.encoder(**q_inputs)
+                    p_outputs = self.encoder(**p_inputs)
 
                     q_outputs = q_outputs.view(batch_size, 1, -1)
                     p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
@@ -192,16 +187,14 @@ class DenseRetrieval:
                     optimizer.step()
                     scheduler.step()
 
-                    self.p_encoder.zero_grad()
-                    self.q_encoder.zero_grad()
+                    self.encoder.zero_grad()
 
                     global_step += 1
 
                     torch.cuda.empty_cache()
                     del p_inputs, q_inputs
 
-        self.q_encoder.save_pretrained(os.path.join(self.data_path, f"q_encoder"))
-        self.p_encoder.save_pretrained(os.path.join(self.data_path, f"p_encoder"))
+        self.encoder.save_pretrained(os.path.join(self.data_path, f"encoder"))
 
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
@@ -213,14 +206,14 @@ class DenseRetrieval:
             
         else:
             print("Build passage embedding")
-            p_encoder = self.p_encoder
+            self.encoder.eval
             p_embeddings = []
             for batch in DataLoader(self.dataset, batch_size=self.args.per_device_eval_batch_size):
                 p_seqs = self.tokenizer(batch['context'], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
                 p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
-                p_embeddings.append(p_encoder(**p_seqs))
+                p_embeddings.append(self.encoder(**p_seqs))
 
-            p_embeddings = torch.cat(p_embeddings, dim=0)
+            p_embeddings = torch.cat(p_embeddings, dim=0).cpu()
             self.p_embeddings = p_embeddings
 
 
@@ -270,17 +263,15 @@ class DenseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-        q_encoder = self.q_encoder
-        p_encoder = self.p_encoder
         
         self.get_dense_embedding()
 
-        q_encoder.eval()
+        self.encoder.eval()
 
         with torch.no_grad():
             q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_embedding = q_encoder(**q_seqs)
+            q_embedding = self.encoder(**q_seqs).cpu()
 
             sim_scores = torch.matmul(q_embedding, self.p_embeddings.transpose(0, 1)).squeeze()
             doc_score, doc_indices = torch.topk(sim_scores, k=k)
@@ -298,33 +289,17 @@ class DenseRetrieval:
             Tuple[List[List[float]], List[List[int]]]:
                 각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
         """
-        q_encoder = self.q_encoder
-        p_encoder = self.p_encoder
+        self.encoder.eval()
 
-        self.get_dense_embedding()
+        with torch.no_grad():
+            q_seqs = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
+            q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
+            q_embeddings = self.encoder(**q_seqs).cpu()
 
-        q_encoder.eval()
-        p_encoder.eval()
+            sim_scores = torch.matmul(q_embeddings, self.p_embeddings.transpose(0, 1))
+            doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
 
-        batch_size = 16  # Adjust this value based on your GPU memory
-
-        all_doc_scores = []
-        all_doc_indices = []
-
-        for i in range(0, len(queries), batch_size):
-            batch_queries = queries[i:i+batch_size]
-            with torch.no_grad():
-                q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
-                q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-                q_embeddings = q_encoder(**q_seqs)
-
-                sim_scores = torch.matmul(q_embeddings, self.p_embeddings.transpose(0, 1))
-                doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
-
-                all_doc_scores.extend(doc_score.tolist())
-                all_doc_indices.extend(doc_indices.tolist())
-
-        return all_doc_scores, all_doc_indices
+            return doc_score.tolist(), doc_indices.tolist()
     
     def retrieve_faiss(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
         pass
