@@ -1,10 +1,10 @@
 model:
-  name: klue/bert-base
+  name: ./models/train_dataset
 
 seed: 42
 
 training:
-  epochs: 1 # HF default = 3
+  epochs: 3 # HF default = 3
   batch_size: 32 # HF default = 8
   learning_rate: 5e-5 # HF default = 5e-5
   optimizer: AdamW # HF default = AdamW
@@ -16,13 +16,13 @@ training:
 dataRetrieval:
   eval: True
   context_path: ./data/wikipedia_documents.json
-  top_k: 5
+  top_k: 10
   faiss:
     use: False
     num_clusters: 64
 
 dataQA:
-  path: ./data/train_dataset
+  path: ./data/test_dataset
   tokenizer:
     max_seq_length: 384
     max_answer_length: 30
