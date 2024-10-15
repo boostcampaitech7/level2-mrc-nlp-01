@@ -1,7 +1,8 @@
 model:
-  name: ./models/train_dataset
+  name: klue/bert-base
 
-seed: 42
+
+seed: 2024
 
 training:
   epochs: 3 # HF default = 3
@@ -22,7 +23,7 @@ dataRetrieval:
     num_clusters: 64
 
 dataQA:
-  path: ./data/test_dataset
+  path: ./data/train_dataset
   tokenizer:
     max_seq_length: 384
     max_answer_length: 30
