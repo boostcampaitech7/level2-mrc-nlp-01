@@ -1,5 +1,5 @@
 model:
-  name: klue/bert-base
+  name: ./models/train_dataset
 
 seed: 42
 
@@ -18,11 +18,11 @@ dataRetrieval:
   context_path: ./data/wikipedia_documents.json
   top_k: 5
   faiss:
-    use: True
+    use: False
     num_clusters: 64
 
 dataQA:
-  path: ./data/train_dataset
+  path: ./data/test_dataset
   tokenizer:
     max_seq_length: 384
     max_answer_length: 30

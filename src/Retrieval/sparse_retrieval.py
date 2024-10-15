@@ -74,15 +74,12 @@ class SparseRetrieval:
         )  # set 은 매번 순서가 바뀌므로
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
-
-        # Transform by vectorizer
-        self.tfidfv = TfidfVectorizer(
-            tokenizer=tokenize_fn, ngram_range=(1, 2), max_features=50000,
-        )
+        
 
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
         self.bm25 = None # BM25 모델을 저장할 변수
+        self.tokenize_fn = tokenize_fn
 
 
     def get_sparse_embedding(self) -> NoReturn:
@@ -171,7 +168,8 @@ class SparseRetrieval:
                 Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
         """
 
-        assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
+        # assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
+        # BM25는 p_embedding 필요 없음. BM25는 쿼리가 주어질 때마다 점수를 계산하기 때문...
 
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
@@ -194,6 +192,10 @@ class SparseRetrieval:
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="Sparse retrieval: ")
             ):
+                print('debug:', idx, example)
+                print('doc_indices shape:', np.array(doc_indices).shape)
+                print('doc_indices for this example:', doc_indices[idx])
+                print('self.contexts length:', len(self.contexts))
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": example["question"],
@@ -223,22 +225,16 @@ class SparseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-
-        with timer("transform"):
-            query_vec = self.tfidfv.transform([query])
-        assert (
-            np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
-
-        with timer("query ex search"):
-            result = query_vec * self.p_embedding.T
-        if not isinstance(result, np.ndarray):
-            result = result.toarray()
-
-        sorted_result = np.argsort(result.squeeze())[::-1]
-        doc_score = result.squeeze()[sorted_result].tolist()[:k]
+        print("get_relevant_doc 실행")
+        tokenized_query = self.tokenize_fn(query)
+        doc_scores = self.bm25.get_scores(tokenized_query)
+        sorted_result = np.argsort(doc_scores)[::-1]
+        doc_scores = doc_scores[sorted_result].tolist()[:k]
         doc_indices = sorted_result.tolist()[:k]
-        return doc_score, doc_indices
+        print("get_relevant_doc 마침")
+        return doc_scores, doc_indices
+        
+        
 
     def get_relevant_doc_bulk(
         self, queries: List, k: Optional[int] = 1
@@ -254,22 +250,19 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        query_vec = self.tfidfv.transform(queries)
-        assert (
-            np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
-
-        result = query_vec * self.p_embedding.T
-        if not isinstance(result, np.ndarray):
-            result = result.toarray()
+        tokenized_queries = [self.tokenize_fn(query) for query in queries]
         doc_scores = []
         doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
+        doc_scores = []
+        doc_indices = []
+        for tokenized_query in tokenized_queries:
+            scores = self.bm25.get_scores(tokenized_query)
+            sorted_result = np.argsort(scores)[::-1]
+        doc_scores.append(scores[sorted_result].tolist()[:k])
+        doc_indices.append(sorted_result.tolist()[:k])
         return doc_scores, doc_indices
-
+    
+    
     def retrieve_faiss(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
