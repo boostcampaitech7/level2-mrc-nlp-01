@@ -36,6 +36,10 @@ def set_all_seed(seed, deterministic=False):
 class DataArguments:
     testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
 
+@dataclass
+class CustomTrainingArguments(TrainingArguments):
+    output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
+
 def configure_logging():
     logger = logging.getLogger(__name__)
     logging.basicConfig(
@@ -77,7 +81,7 @@ def main():
     logger = configure_logging()
     
     # Argument parsing
-    parser = HfArgumentParser((TrainingArguments, DataArguments))
+    parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
     training_args.output_dir = use_proper_output_dir(config, training_args)
     set_all_seed(config.seed())
