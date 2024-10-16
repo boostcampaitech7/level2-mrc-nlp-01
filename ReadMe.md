@@ -1,54 +1,22 @@
 ## version 설명
-- 본 버전은 version_0.0으로 가정한 기본 제공된 BaseLineCode에서 준성님이 재구조화 시킨 version_1.0을 기반으로 작동하며
-- 해당 버전에 있어 https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/10 에 기록된 바, `Sparse_retrieval.py` 를 다소 수정하여 retriever 성능 평가 기능을 정상 작동시킴.
-- `requirements.txt` 추가
-- 코드 수정: train.py
-    ```
-    from datasets import load_from_disk, load_metric 
-    ```
-    위 코드를
-    ```
-    from datasets import load_from_disk
-    from evaluate import load as load_metric
-    ```
-    위와 같이 변경
-- 코드 수정: config.py
-    ```
-    class Config:
-    def __init__(self, config_dict=None, path='./config.yaml'):
-    ```
-    위 부분을
-    ```
-    class Config:
-    def __init__(self, config_dict=None, path='../config.yaml'):
-    ```
-    와 같이 현재 파일구조와 맞춤.
-
-- 코드 수정: config.yaml
-    경로 관련하여 
-    CLI에서 실행시킬 `train.py`를
-    `/data/ephemeral/home/project/version_1.1/src/train.py` 와 같이 입력시키면 `permission denied` 문제가 있어서
-    그냥 터미널을 src 폴더 들어가서 실행시키는 것으로 하고 config.yaml의
-    `./data/train_dataset` 라고 되어있던 부분을
-    `../data/train_dataset` 이렇게 바꿈.
-    원래대로 `python train.py --output_dir ./models/train_dataset --do_train`
-    명령하면 이제 됨.
-
-- 기능 추가: `--testing`
-    관련하여 전체 데이터셋을 사용하지 않고 testing 할 수 있도록 argument parser 추가
-    - `train.py`와 `inference.py`, `sparse_retrieval.py`에 해당 부분이 적용될 수 있도록 코드 수정하였고
-    - 구체적으로는 datasets, wikipedia_documents 불러오는 부분을 1%만 불러오게끔 수정함.
-
-- 코드 수정: `.gitignore`에 `__pycache__` 추가함.
+- 본 버전은 v2.0.0으로 v1.1.0과는 다음의 점에서 크게 다르다.
+  - Dense retriever가 추가되었다. config.yaml에서 dense로 설정하면 실행시 dense_retriever로 실행된다.
+  - Sparse retriever 관련하여 TF-IDF 가 아닌, BM25를 활용한다.
+  - train.py와 inference.py를 통합하여 main.py로 옮겼다.
+  - 실험 편이성과 에러 방지를 위해 기존 CLI commnad 를 다음 셋으로 간략화했다.
+    `python src/main.py --do_train`
+    `python src/main.py --do_eval`
+    `python src/main.py --do_predict`
 
 
-## 구체적인 적용점 (GitHub Issue)
-- Ljb issue 09 #10 
+## 관련 PR 모음
+* feat: TF-IDF를 이용한 Sparse Retrieval의 성능 측정 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/22
+* fix : top_k 설정 안 되던 버그 수정 by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/27
+* Feat : change TF-IDF to BM25 by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/23
+* refactor: streamlit 폴더 구조 개편 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/30
+* refactor: config 사용법 정상화 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/33
+* Refactor/Feat: CLI 커맨드 통일화 및 train.py 와 inference.py를 main.py로 합침. by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/29
+* Feat: Dense Retrieval 구현 by @Now100 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/35
 
-# 실행 방법
-- train의 경우
-    python src/train.py --output_dir ./models/train_dataset --do_train `--testing`(선택)
-- eval의 경우
-    python src/train.py --output_dir ./outputs/train_dataset  --do_eval `--testing`(선택)
-- inference의 경우
-    python src/inference.py --output_dir ./outputs/test_dataset/ --dataset_name ./data/test_dataset  --do_predict `--testing`(선택)
+
+**Full Changelog**: https://github.com/boostcampaitech7/level2-mrc-nlp-01/compare/v1.1.0...v2.0.0
