@@ -98,14 +98,15 @@ class SparseRetrieval:
         if os.path.isfile(emd_path) :
             with open(emd_path, "rb") as file:
                 self.bm25 = pickle.load(file)
-            print("BM25 pickle loaded.")
+            print("-----------BM25 pickle loaded.-----------")
+            print("-----------we loaded it from data/ not src-----------")
         else:
             print("Build BM25 embedding")
             tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
             self.bm25 = BM25Okapi(tokenized_contexts)
             with open(emd_path, "wb") as file:
                 pickle.dump(self.bm25, file)
-                print("BM25 pickle saved.")
+                print("-----------BM25 pickle saved.", "saved at data/-----------")
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
