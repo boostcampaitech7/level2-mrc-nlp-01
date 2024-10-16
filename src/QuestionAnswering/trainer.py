@@ -136,7 +136,7 @@ class GenerationBasedSeq2SeqTrainer(Seq2SeqTrainer):
         # _gen_kwargs 설정
         self._gen_kwargs = {
             "max_length": self.max_answer_length,
-            "num_beams": 4,  # Beam Search 예시, 필요에 따라 수정 가능
+            "num_beams": 3,  # Beam Search 예시, 필요에 따라 수정 가능
         }
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
