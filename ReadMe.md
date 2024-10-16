@@ -4,8 +4,11 @@
   - Sparse retriever 관련하여 TF-IDF 가 아닌, BM25를 활용한다.
   - train.py와 inference.py를 통합하여 main.py로 옮겼다.
   - 실험 편이성과 에러 방지를 위해 기존 CLI commnad 를 다음 셋으로 간략화했다.
+    
     `python src/main.py --do_train`
+    
     `python src/main.py --do_eval`
+
     `python src/main.py --do_predict`
 
 
