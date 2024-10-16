@@ -33,12 +33,12 @@ def set_all_seed(seed, deterministic=False):
         torch.backends.cudnn.benchmark = False
 
 @dataclass
-class CustomTrainingArguments(TrainingArguments):
-    output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
-
-@dataclass
 class DataArguments:
     testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
+
+@dataclass
+class CustomTrainingArguments(TrainingArguments):
+    output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
 
 def configure_logging():
     logger = logging.getLogger(__name__)
@@ -49,22 +49,48 @@ def configure_logging():
     )
     return logger
 
+def use_proper_datasets(config, training_args):
+    if training_args.do_train or training_args.do_eval:
+        return load_from_disk(config.dataQA.path.train('./data/train_dataset')) 
+    elif training_args.do_predict:
+        return load_from_disk(config.dataQA.path.test('./data/test_dataset'))
+    else:
+        return None
 
-def adjust_config_for_mode(config, training_args):
-    # 모델 이름 및 데이터 경로를 상황에 맞게 설정
+def use_small_datasets(datasets):
+    def cut(dataset):
+        length = len(dataset)
+        return dataset.select(range(length // 100))
+    return {key: cut(dataset) for key, dataset in datasets.items()}
+
+def use_proper_output_dir(config, training_args):
     if training_args.do_train:
-        # config.model.name = 'klue/bert-base'  # yaml에서 설정된 model.name 그대로 가져감.
-        config.dataQA.path = './data/train_dataset'  # Training 시 train 데이터셋 경로
-        training_args.output_dir = './models/train_dataset'
+        # do_train의 결과는 model이므로
+        return config.output.model('./models/train_dataset')
     elif training_args.do_eval:
-        config.model.name = './models/train_dataset'  # Evaluation 또는 Prediction 시 fine-tuned 모델
-        config.dataQA.path = './data/train_dataset'  # Evaluation 또는 Prediction 시 test 데이터셋 경로
-        training_args.output_dir = './outputs/train_dataset'
-    else: # do_predict인 경우
-        config.model.name = './models/train_dataset'
-        config.dataQA.path = './data/test_dataset'
-        training_args.output_dir = './outputs/test_dataset'
-        
+        # do_eval의 결과는 evaluation 결과이므로
+        return config.output.train('./outputs/train_dataset')
+    elif training_args.do_predict:
+        # do_predict의 결과는 prediction 결과이므로
+        return config.output.test('./outputs/test_dataset')
+    else:
+        return None
+
+def use_proper_model(config, training_args):
+    if training_args.do_train:
+        return config.model.name()
+    elif training_args.do_eval or training_args.do_predict:
+        return config.output.model('./models/train_dataset')
+
+def set_hyperparameters(config, training_args):
+    training_args.num_train_epochs = config.training.epochs()
+    training_args.per_device_train_batch_size = config.training.batch_size()
+    training_args.per_device_eval_batch_size = config.training.batch_size()
+    training_args.learning_rate = float(config.training.learning_rate())
+    training_args.weight_decay = float(config.training.weight_decay())
+    training_args.lr_scheduler_type  = config.training.scheduler()
+
+    return training_args
 
 def main():
     config = Config()
@@ -73,31 +99,26 @@ def main():
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
-
+    training_args.output_dir = use_proper_output_dir(config, training_args)
+    training_args = set_hyperparameters(config, training_args)
+    is_testing = True if data_args.testing else config.testing(False)
     set_all_seed(config.seed())
 
     logger.info("Training/evaluation parameters %s", training_args)
 
     # 상황에 맞는 모델 이름과 데이터 경로 설정
-    adjust_config_for_mode(config, training_args)
     print('output_dir', training_args.output_dir)
 
-    datasets = load_from_disk(config.dataQA.path)
-    # datasets = load_and_process_datasets(config, data_args, training_args)
-    # print(datasets)
+    datasets = use_proper_datasets(config, training_args)
+    if is_testing:
+        datasets = use_small_datasets(datasets)
 
     # Load model and tokenizer
     
-    if training_args.do_train:
-        config_hf = AutoConfig.from_pretrained(config.model.name())
-        tokenizer = AutoTokenizer.from_pretrained(config.model.name(), use_fast=True)
-        model = AutoModelForQuestionAnswering.from_pretrained(config.model.name(), config=config_hf)
-    else:
-        config_hf = AutoConfig.from_pretrained(config.model.name)
-        tokenizer = AutoTokenizer.from_pretrained(config.model.name, use_fast=True)
-        model = AutoModelForQuestionAnswering.from_pretrained(config.model.name, config=config_hf)
-    
-    
+    model_name = use_proper_model(config, training_args)
+    config_hf = AutoConfig.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
@@ -105,7 +126,7 @@ def main():
         retriever = SparseRetrieval(
             tokenize_fn=tokenizer.tokenize,
             context_path=config.dataRetrieval.context_path(),
-            testing=data_args.testing
+            testing=is_testing,
         )
         datasets = retriever.run(datasets, training_args, config)
 
@@ -124,8 +145,6 @@ def main():
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
         wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
-    
-
     
     train_dataset, eval_dataset = None, None
     if training_args.do_train:
@@ -191,7 +210,6 @@ def main():
         predictions = trainer.predict(test_dataset=eval_dataset, test_examples=datasets["validation"])
         logger.info("No metric can be presented because there is no correct answer given. Job done!")
         
-
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
