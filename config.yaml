@@ -14,6 +14,7 @@ training:
   scheduler: linear # HF default = "linear"
 
 dataRetrieval:
+  type: sparse
   eval: True
   context_path: ./data/wikipedia_documents.json
   top_k: 10

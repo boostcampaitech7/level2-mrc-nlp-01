@@ -20,6 +20,7 @@ from QuestionAnswering.utils import check_no_error
 from QuestionAnswering.trainer import QuestionAnsweringTrainer
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
+from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
 
 def set_all_seed(seed, deterministic=False):
@@ -123,11 +124,17 @@ def main():
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
         print('*****doing eval or predict*****')
-        retriever = SparseRetrieval(
-            tokenize_fn=tokenizer.tokenize,
-            context_path=config.dataRetrieval.context_path(),
-            testing=is_testing,
-        )
+        if config.dataRetrieval.type() == "sparse":
+            retriever = SparseRetrieval(
+                tokenize_fn=tokenizer.tokenize,
+                context_path=config.dataRetrieval.context_path(),
+                testing=is_testing,
+            )
+        elif config.dataRetrieval.type() == "dense":
+            retriever = DenseRetrieval(
+                model_name=model_name,
+                context_path=config.dataRetrieval.context_path(),
+            )
         datasets = retriever.run(datasets, training_args, config)
 
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
