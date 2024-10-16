@@ -134,6 +134,15 @@ def main():
             retriever = DenseRetrieval(
                 model_name=model_name,
                 context_path=config.dataRetrieval.context_path(),
+                args=TrainingArguments(
+                    output_dir=config.dataRetrieval.args.output_dir(),
+                    evaluation_strategy=config.dataRetrieval.args.evaluation_strategy(),
+                    learning_rate=float(config.dataRetrieval.args.learning_rate()),
+                    per_device_train_batch_size=config.dataRetrieval.args.per_device_train_batch_size(),
+                    per_device_eval_batch_size=config.dataRetrieval.args.per_device_eval_batch_size(),
+                    num_train_epochs=config.dataRetrieval.args.num_train_epochs(),
+                    weight_decay=config.dataRetrieval.args.weight_decay(),
+                ),
             )
         datasets = retriever.run(datasets, training_args, config)
 

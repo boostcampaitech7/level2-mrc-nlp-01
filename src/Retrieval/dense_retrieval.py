@@ -52,6 +52,15 @@ class DenseRetrieval:
         self,
         model_name: str,
         context_path: Optional[str] = "wikipedia_documents.json",
+        args: Optional[TrainingArguments] = TrainingArguments(
+            output_dir="dense_retireval",
+            evaluation_strategy="epoch",
+            learning_rate=2e-5,
+            per_device_train_batch_size=2,
+            per_device_eval_batch_size=2,
+            num_train_epochs=5,
+            weight_decay=0.01
+        ),
         num_negatives: Optional[int] = 2,
     ) -> NoReturn:
 
@@ -77,17 +86,9 @@ class DenseRetrieval:
         self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
         self.p_embeddings = None
 
-        self.num_negatives = 2
+        self.num_negatives = num_negatives
 
-        self.args = TrainingArguments(
-            output_dir="dense_retireval",
-            evaluation_strategy="epoch",
-            learning_rate=2e-5,
-            per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
-            num_train_epochs=5,
-            weight_decay=0.01
-        )
+        self.args = args
         self.indexer = None
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
@@ -128,6 +129,8 @@ class DenseRetrieval:
     def train(self, args=None):
         if args is None:
             args = self.args
+
+        print("Training encoder")
 
         batch_size = args.per_device_train_batch_size
 
