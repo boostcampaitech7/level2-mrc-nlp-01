@@ -237,6 +237,12 @@ class DenseRetrieval:
             print("Embedding pickle load.")
         else:
             print("Build passage embedding")
+            if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
+                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder"))
+                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder"))
+            else:
+                self.train()
+
             self.p_encoder.eval()
 
             p_embeddings = []
@@ -439,7 +445,7 @@ class DenseRetrieval:
         return D_list, I_list
 
     def run(self, datasets, training_args, config):
-        
+
         self.get_dense_embedding()
         
         if config.dataRetreival.faiss.use(False):
