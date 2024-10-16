@@ -162,8 +162,7 @@ class DenseRetrieval:
                     self.q_encoder.train()
                     self.p_encoder.train()
 
-                    targets = torch.zeros(batch_size).long() # 각 데이터 모두 index 0 이 정답 -> [0, 0, 0, ... 0, 0, 0]
-                    targets = targets.to(self.device)
+                    targets = torch.zeros(batch_size).long().to(self.device)
 
                     q_inputs = {
                         "input_ids": batch[0].to(self.device),
@@ -183,7 +182,7 @@ class DenseRetrieval:
                     q_outputs = q_outputs.view(batch_size, 1, -1)
                     p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
 
-                    sim_scores = torch.bmm(p_outputs, q_outputs.transpose(1, 2)).squeeze()
+                    sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
                     sim_scores = sim_scores.view(batch_size, -1)
                     sim_scores = F.log_softmax(sim_scores, dim=1)
                 
@@ -238,8 +237,8 @@ class DenseRetrieval:
         else:
             print("Build passage embedding")
             if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
-                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder"))
-                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder"))
+                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
             else:
                 self.train()
 
@@ -316,6 +315,9 @@ class DenseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
+
+        self.q_encoder.eval()
+        self.q_encoder.to(self.device)
 
         self.q_encoder.eval()
         self.q_encoder.to(self.device)
@@ -552,7 +554,7 @@ if __name__ == "__main__":
 
     else:
         with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds, topk=5)
+            df = retriever.retrieve(full_ds, topk=1)
             df["correct"] = df["original_context"] == df["context"]
             print(
                 "correct retrieval result by exhaustive search",
@@ -560,4 +562,4 @@ if __name__ == "__main__":
             )
 
         with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query, topk=5)
+            scores, indices = retriever.retrieve(query, topk=1)
