@@ -32,6 +32,22 @@ def set_all_seed(seed, deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+def set_hyperparameters(config, training_args):
+    training_args.num_train_epochs = config.training.epochs()
+    training_args.per_device_train_batch_size = config.training.batch_size()
+    training_args.per_device_eval_batch_size = config.training.batch_size()
+    training_args.learning_rate = float(config.training.learning_rate())
+    training_args.weight_decay = float(config.training.weight_decay())
+    training_args.lr_scheduler_type  = config.training.scheduler()
+    training_args.save_strategy = 'epoch',
+    training_args.evaluation_strategy = 'epoch',
+    training_args.save_total_limit = 2,
+    training_args.logging_strategy = 'epoch',
+    training_args.load_best_model_at_end = True,
+    training_args.remove_unused_columns = True
+
+    return training_args
+
 @dataclass
 class CustomTrainingArguments(TrainingArguments):
     output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
@@ -73,6 +89,11 @@ def main():
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
+    
+    # Set hyperparameters
+    training_args = set_hyperparameters(config, training_args)
+
+    # training_args.predict_with_generate = True
 
     set_all_seed(config.seed())
 
