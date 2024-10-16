@@ -439,7 +439,8 @@ class DenseRetrieval:
         return D_list, I_list
 
     def run(self, datasets, training_args, config):
-        self.train()
+        
+        self.get_dense_embedding()
         
         if config.dataRetreival.faiss.use(False):
             self.build_faiss(
