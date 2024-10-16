@@ -47,3 +47,5 @@ output:
   model: ./models/train_dataset
   train: ./outputs/train_dataset
   test: ./outputs/test_dataset
+
+testing: False
