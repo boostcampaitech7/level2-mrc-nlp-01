@@ -3,6 +3,8 @@
   - Dense retriever가 추가되었다. config.yaml에서 dense로 설정하면 실행시 dense_retriever로 실행된다.
   - Sparse retriever 관련하여 TF-IDF 가 아닌, BM25를 활용한다.
   - train.py와 inference.py를 통합하여 main.py로 옮겼다.
+  - 덜 구현된 하이퍼 파라미터들을 training_args로 받아 제대로 적용시켰다.
+  - EDA 관련 server를 하나 개설했고 해당 서버는 streamlit으로 구현되어 QA 관련 데이터셋을 시각화 및 분석할 수 있도록 하였다.
   - 실험 편이성과 에러 방지를 위해 기존 CLI commnad 를 다음 셋으로 간략화했다.
     
     `python src/main.py --do_train`
