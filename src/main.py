@@ -82,6 +82,16 @@ def use_proper_model(config, training_args):
     elif training_args.do_eval or training_args.do_predict:
         return config.output.model('./models/train_dataset')
 
+def set_hyperparameters(config, training_args):
+    training_args.num_train_epochs = config.training.epochs()
+    training_args.per_device_train_batch_size = config.training.batch_size()
+    training_args.per_device_eval_batch_size = config.training.batch_size()
+    training_args.learning_rate = float(config.training.learning_rate())
+    training_args.weight_decay = float(config.training.weight_decay())
+    training_args.lr_scheduler_type  = config.training.scheduler()
+
+    return training_args
+
 def main():
     config = Config()
     logger = configure_logging()
@@ -90,6 +100,7 @@ def main():
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
     training_args.output_dir = use_proper_output_dir(config, training_args)
+    training_args = set_hyperparameters(config, training_args)
     is_testing = True if data_args.testing else config.testing(False)
     set_all_seed(config.seed())
 
