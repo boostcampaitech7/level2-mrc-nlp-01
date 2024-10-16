@@ -17,6 +17,7 @@ Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
 from transformers import Trainer, Seq2SeqTrainer, is_datasets_available, is_torch_tpu_available, EvalPrediction
 from transformers.trainer_utils import PredictionOutput
+import collections, os, json, tqdm
 
 from QuestionAnswering.utils import postprocess_qa_predictions 
 
@@ -135,8 +136,8 @@ class GenerationBasedSeq2SeqTrainer(Seq2SeqTrainer):
 
         # _gen_kwargs 설정
         self._gen_kwargs = {
-            "max_length": self.max_answer_length,
-            "num_beams": 3,  # Beam Search 예시, 필요에 따라 수정 가능
+            "max_length": config.dataQA.tokenizer.max_answer_length(30),
+            "num_beams": config.dataQA.generation.num_beams(3),  # Beam Search 예시, 필요에 따라 수정 가능
         }
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
@@ -203,11 +204,63 @@ class GenerationBasedSeq2SeqTrainer(Seq2SeqTrainer):
         """
         생성된 텍스트 예측을 처리하고, EvalPrediction 객체로 반환하는 함수.
         """
-        # 생성된 텍스트를 디코딩
-        decoded_predictions = self.wrapped_tokenizer.tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        # print("!!!!!!!!!!!!!examples!!!!!!!!!!!!!!!!")
+        # print(examples[0])
+        # print()
+        # print("!!!!!!!!!!!!!features!!!!!!!!!!!!!!!!")
+        # print(features['labels'])
+        # print()
+        # print("!!!!!!!!!!!!!predictions!!!!!!!!!!!!!!!!")
+        # print(predictions[0])
+        # print(predictions[1])
+        # print()
 
-        # 예측 결과를 적절한 형식으로 변환
-        formatted_predictions = [{"id": ex["id"], "prediction_text": pred} for ex, pred in zip(examples, decoded_predictions)]
+        # # 생성된 텍스트를 디코딩
+        # decoded_predictions = self.wrapped_tokenizer.tokenizer.batch_decode(predictions, skip_special_tokens=True)
+
+        # # 예측 결과를 적절한 형식으로 변환
+        # formatted_predictions = [{"id": ex["id"], "prediction_text": pred} for ex, pred in zip(examples, decoded_predictions)]
         
-        # EvalPrediction 객체로 예측과 레이블을 감싸서 반환
-        return EvalPrediction(predictions=formatted_predictions, label_ids=examples)
+        
+
+        # # EvalPrediction 객체로 예측과 레이블을 감싸서 반환
+        return self.wrapped_tokenizer.decode(examples, features, predictions, args)
+
+        """
+        예측 결과를 디코딩하고, 평가에 적합한 포맷으로 반환합니다.
+        """
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print(predictions)
+        preds = predictions
+        if isinstance(preds, tuple):
+            preds = preds[0]
+
+        preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~preds!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(preds)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        # decoded_labels is for rouge metric, not used for f1/em metric
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~decoded_preds!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(decoded_preds)
+
+        # examples에 있는 실제 레이블을 추출
+        labels = [example["answers"]["text"][0] for example in examples]
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~labels!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(labels)
+
+        # labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
+        # decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # Some simple post-processing
+        # decoded_preds, decoded_labels = self.postprocess_text(decoded_preds, decoded_labels)
+
+        formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
+        references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
+        
+        if args.do_predict:
+            return formatted_predictions
+        elif args.do_eval:
+            return EvalPrediction(
+                predictions=formatted_predictions,
+                label_ids=references,
+            )
