@@ -56,10 +56,18 @@ def adjust_config_for_mode(config, training_args):
         # config.model.name = 'klue/bert-base'  # yaml에서 설정된 model.name 그대로 가져감.
         config.dataQA.path = './data/train_dataset'  # Training 시 train 데이터셋 경로
         training_args.output_dir = './models/train_dataset'
+        training_args.num_train_epochs = config.training.epochs()
+        training_args.per_device_train_batch_size = config.training.batch_size()
+        training_args.per_device_eval_batch_size = config.training.batch_size()
+        training_args.learning_rate = float(config.training.learning_rate())
+        training_args.weight_decay = float(config.training.weight_decay())
+        training_args.lr_scheduler_type  = config.training.scheduler()
+        
     elif training_args.do_eval:
         config.model.name = './models/train_dataset'  # Evaluation 또는 Prediction 시 fine-tuned 모델
         config.dataQA.path = './data/train_dataset'  # Evaluation 또는 Prediction 시 test 데이터셋 경로
         training_args.output_dir = './outputs/train_dataset'
+        
     else: # do_predict인 경우
         config.model.name = './models/train_dataset'
         config.dataQA.path = './data/test_dataset'
