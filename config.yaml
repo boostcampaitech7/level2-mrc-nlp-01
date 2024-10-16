@@ -34,9 +34,9 @@ dataQA:
     overwrite_cache: False
 
   preprocess:
-    - method: your-preprocess-method
-      params:
-        p: 0.0
+    # - method: your-preprocess-method
+    #   params:
+    #     p: 0.0
 
   augmentation:
     # - method: your-augementation-method
