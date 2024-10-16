@@ -57,6 +57,12 @@ def use_proper_datasets(config, training_args):
     else:
         return None
 
+def use_small_datasets(datasets):
+    def cut(dataset):
+        length = len(dataset)
+        return dataset.select(range(length // 100))
+    return {key: cut(dataset) for key, dataset in datasets.items()}
+
 def use_proper_output_dir(config, training_args):
     if training_args.do_train:
         # do_train의 결과는 model이므로
@@ -93,7 +99,8 @@ def main():
     print('output_dir', training_args.output_dir)
 
     datasets = use_proper_datasets(config, training_args)
-    # print(datasets)
+    if is_testing:
+        datasets = use_small_datasets(datasets)
 
     # Load model and tokenizer
     
