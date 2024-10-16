@@ -39,6 +39,7 @@ def set_hyperparameters(config, training_args):
     training_args.learning_rate = float(config.training.learning_rate())
     training_args.weight_decay = float(config.training.weight_decay())
     training_args.lr_scheduler_type  = config.training.scheduler()
+    training_args.predict_with_generate  = config.training.predict_with_generate()
     training_args.save_strategy = 'epoch',
     training_args.evaluation_strategy = 'epoch',
     training_args.save_total_limit = 2,
@@ -92,8 +93,6 @@ def main():
     
     # Set hyperparameters
     training_args = set_hyperparameters(config, training_args)
-
-    # training_args.predict_with_generate = True
 
     set_all_seed(config.seed())
 
