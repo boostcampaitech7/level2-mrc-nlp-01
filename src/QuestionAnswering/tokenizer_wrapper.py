@@ -1,6 +1,8 @@
 from transformers import EvalPrediction
 import numpy as np
 import nltk
+import collections, os, json
+from tqdm import tqdm
 
 class QuestionAnsweringTokenizerWrapper:
     def __init__(self, tokenizer, config, column_name_dict = {"question": "question", "context": "context", "answers": "answers"}):
@@ -242,6 +244,14 @@ class Seq2SeqLMTokenizerWrapper:
 
         return tokenized_example
     
+    def encode_test(self, examples):
+        """
+        test 데이터를 인코딩합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        return tokenized_example
+    
     def postprocess_text(self, preds, labels):
         print(nltk.data.path)
         preds = [pred.strip() for pred in preds]
@@ -257,35 +267,51 @@ class Seq2SeqLMTokenizerWrapper:
         예측 결과를 디코딩하고, 평가에 적합한 포맷으로 반환합니다.
         """
         preds = predictions
-        labels = np.array(features['labels'])
-        labels = np.where((labels >= 0) & (labels < self.tokenizer.vocab_size), labels, self.tokenizer.pad_token_id)
+
+        preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
+        # print("!!!!!!!!!!!!!decoded_preds!!!!!!!!!!!!!!!!")
+        # print(decoded_preds)
+        if not training_args.do_predict:
+            labels = np.array(features['labels'])
+            labels = np.where((labels >= 0) & (labels < self.tokenizer.vocab_size), labels, self.tokenizer.pad_token_id)
 
         # if isinstance(preds, tuple):
         #     preds = preds[0]
         # 'predictions'에서 실제 예측된 텍스트 토큰 시퀀스를 추출
         # preds = [pred["prediction_text"] for pred in examples.predictions]
 
-        preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
-        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
-        # decoded_labels is for rouge metric, not used for f1/em metric
+            # decoded_labels is for rouge metric, not used for f1/em metric
 
-        labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
-        decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+            labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
+            decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         # Some simple post-processing
         #decoded_preds, decoded_labels = self.postprocess_text(decoded_preds, decoded_labels)
 
-        formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
-        references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
         
-        print("!!!!!!!!!!!!!formatted_predictions!!!!!!!!!!!!!!!!")
-        print(formatted_predictions[0])
-        print()
-        print("!!!!!!!!!!!!!references!!!!!!!!!!!!!!!!")
-        print(references[0])
-        print()
-
+            references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
+        
+        # print("!!!!!!!!!!!!!formatted_predictions!!!!!!!!!!!!!!!!")
+        # print(formatted_predictions[0])
+        # print()
+        # print("!!!!!!!!!!!!!references!!!!!!!!!!!!!!!!")
+        # print(references[0])
+        # print()
+        # print(len(examples["id"]))
+        # print(len(decoded_preds))
         if training_args.do_predict:
+            all_predictions = collections.OrderedDict()
+            for example, pred in zip(examples, decoded_preds):
+                all_predictions[example["id"]] = pred
+
+            # print(all_predictions)
+            prediction_file = "./outputs/test_dataset/predictions.json"
+            with open(prediction_file, "w", encoding="utf-8") as writer:
+                writer.write(
+                    json.dumps(all_predictions, indent=4, ensure_ascii=False) + "\n"
+                )
             return formatted_predictions
         elif training_args.do_eval:
             return EvalPrediction(
