@@ -1,7 +1,6 @@
 model:
   name: klue/bert-base
 
-
 seed: 2024
 
 training:
@@ -23,13 +22,15 @@ dataRetrieval:
     num_clusters: 64
 
 dataQA:
-  path: ./data/train_dataset
+  path: 
+    train: ./data/train_dataset
+    test: ./data/test_dataset
   tokenizer:
     max_seq_length: 384
     max_answer_length: 30
     doc_stride: 128
     pad_to_max_length: True
-    preprocessing_num_wrokers: 
+    preprocessing_num_workers: null
     overwrite_cache: False
 
   preprocess:
@@ -42,5 +43,7 @@ dataQA:
     #   params:
     #     p: 0.0
 
-testing:
-  
+output:
+  model: ./models/train_dataset
+  train: ./outputs/train_dataset
+  test: ./outputs/test_dataset
