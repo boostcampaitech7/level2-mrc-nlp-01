@@ -84,6 +84,7 @@ def main():
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
     training_args.output_dir = use_proper_output_dir(config, training_args)
+    is_testing = True if data_args.testing else config.testing(False)
     set_all_seed(config.seed())
 
     logger.info("Training/evaluation parameters %s", training_args)
@@ -107,7 +108,7 @@ def main():
         retriever = SparseRetrieval(
             tokenize_fn=tokenizer.tokenize,
             context_path=config.dataRetrieval.context_path(),
-            testing=data_args.testing
+            testing=is_testing,
         )
         datasets = retriever.run(datasets, training_args, config)
 
