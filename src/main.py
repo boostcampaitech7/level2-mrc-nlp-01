@@ -9,16 +9,18 @@ from evaluate import load as load_metric
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
+    AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorWithPadding,
+    DataCollatorForSeq2Seq,
     HfArgumentParser,
     TrainingArguments,
     set_seed,
 )
 from config import Config
 from QuestionAnswering.utils import check_no_error
-from QuestionAnswering.trainer import QuestionAnsweringTrainer
-from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper
+from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedSeq2SeqTrainer
+from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from dataclasses import dataclass, field
 
@@ -50,12 +52,13 @@ def set_hyperparameters(config, training_args):
     return training_args
 
 @dataclass
+class DataArguments:
+    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
+
+@dataclass
 class CustomTrainingArguments(TrainingArguments):
     output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
 
-@dataclass
-class DataArguments:
-    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
 
 def configure_logging():
     logger = logging.getLogger(__name__)
@@ -66,22 +69,55 @@ def configure_logging():
     )
     return logger
 
+def use_proper_datasets(config, training_args):
+    if training_args.do_train or training_args.do_eval:
+        return load_from_disk(config.dataQA.path.train('./data/train_dataset')) 
+    elif training_args.do_predict:
+        return load_from_disk(config.dataQA.path.test('./data/test_dataset'))
+    else:
+        return None
 
-def adjust_config_for_mode(config, training_args):
-    # 모델 이름 및 데이터 경로를 상황에 맞게 설정
+def use_small_datasets(datasets):
+    def cut(dataset):
+        length = len(dataset)
+        return dataset.select(range(length // 100))
+    return {key: cut(dataset) for key, dataset in datasets.items()}
+
+def use_proper_output_dir(config, training_args):
     if training_args.do_train:
-        # config.model.name = 'klue/bert-base'  # yaml에서 설정된 model.name 그대로 가져감.
-        config.dataQA.path = './data/train_dataset'  # Training 시 train 데이터셋 경로
-        training_args.output_dir = './models/train_dataset'
+        # do_train의 결과는 model이므로
+        return config.output.model('./models/train_dataset')
     elif training_args.do_eval:
-        config.model.name = './models/train_dataset'  # Evaluation 또는 Prediction 시 fine-tuned 모델
-        config.dataQA.path = './data/train_dataset'  # Evaluation 또는 Prediction 시 test 데이터셋 경로
-        training_args.output_dir = './outputs/train_dataset'
-    else: # do_predict인 경우
-        config.model.name = './models/train_dataset'
-        config.dataQA.path = './data/test_dataset'
-        training_args.output_dir = './outputs/test_dataset'
+        # do_eval의 결과는 evaluation 결과이므로
+        return config.output.train('./outputs/train_dataset')
+    elif training_args.do_predict:
+        # do_predict의 결과는 prediction 결과이므로
+        return config.output.test('./outputs/test_dataset')
+    else:
+        return None
         
+def use_proper_model(config, training_args):
+    if training_args.do_train:
+        return config.model.name()
+    elif training_args.do_eval or training_args.do_predict:
+        return config.output.model('./models/train_dataset')
+
+def set_hyperparameters(config, training_args):
+    training_args.num_train_epochs = config.training.epochs()
+    training_args.per_device_train_batch_size = config.training.batch_size()
+    training_args.per_device_eval_batch_size = config.training.batch_size()
+    training_args.learning_rate = float(config.training.learning_rate())
+    training_args.weight_decay = float(config.training.weight_decay())
+    training_args.lr_scheduler_type  = config.training.scheduler()
+    training_args.predict_with_generate  = config.training.predict_with_generate()
+    training_args.save_strategy = 'epoch',
+    training_args.evaluation_strategy = 'epoch',
+    training_args.save_total_limit = 2,
+    training_args.logging_strategy = 'epoch',
+    training_args.load_best_model_at_end = True,
+    training_args.remove_unused_columns = True
+
+    return training_args
 
 def main():
     config = Config()
@@ -91,32 +127,27 @@ def main():
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
     
-    # Set hyperparameters
+    training_args.output_dir = use_proper_output_dir(config, training_args)
     training_args = set_hyperparameters(config, training_args)
-
+    is_testing = True if data_args.testing else config.testing(False)
     set_all_seed(config.seed())
 
     logger.info("Training/evaluation parameters %s", training_args)
 
     # 상황에 맞는 모델 이름과 데이터 경로 설정
-    adjust_config_for_mode(config, training_args)
     print('output_dir', training_args.output_dir)
 
-    datasets = load_from_disk(config.dataQA.path)
-    # datasets = load_and_process_datasets(config, data_args, training_args)
-    # print(datasets)
+    datasets = use_proper_datasets(config, training_args)
+    if is_testing:
+        datasets = use_small_datasets(datasets)
 
     # Load model and tokenizer
     
-    if training_args.do_train:
-        config_hf = AutoConfig.from_pretrained(config.model.name())
-        tokenizer = AutoTokenizer.from_pretrained(config.model.name(), use_fast=True)
-        model = AutoModelForQuestionAnswering.from_pretrained(config.model.name(), config=config_hf)
-    else:
-        config_hf = AutoConfig.from_pretrained(config.model.name)
-        tokenizer = AutoTokenizer.from_pretrained(config.model.name, use_fast=True)
-        model = AutoModelForQuestionAnswering.from_pretrained(config.model.name, config=config_hf)
-    
+    model_name = use_proper_model(config, training_args)
+    config_hf = AutoConfig.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    # model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
     
     
     # Sparse Retrieval
@@ -125,7 +156,7 @@ def main():
         retriever = SparseRetrieval(
             tokenize_fn=tokenizer.tokenize,
             context_path=config.dataRetrieval.context_path(),
-            testing=data_args.testing
+            testing=is_testing,
         )
         datasets = retriever.run(datasets, training_args, config)
 
@@ -138,11 +169,11 @@ def main():
     if training_args.do_predict:
         _, max_seq_length = check_no_error(config, training_args, datasets, tokenizer)
         config.dataQA.tokenizer.max_seq_length.atom = max_seq_length
-        wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
+        wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
         
     else:
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
-        wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
+        wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
         column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
     
 
@@ -150,6 +181,8 @@ def main():
     train_dataset, eval_dataset = None, None
     if training_args.do_train:
         train_dataset = datasets["train"]
+        # for column in train_dataset.column_names:
+        #     print(f"Column '{column}' example values: {train_dataset[column][0]}") 
         train_dataset = train_dataset.map(
             wrapped_tokenizer.encode_train,
             batched=True,
@@ -157,8 +190,12 @@ def main():
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
             )
+        # for column in train_dataset.column_names:
+        #     print(f"Column '{column}' example values: {train_dataset[column][0]}") 
     elif training_args.do_eval:
         eval_dataset = datasets["validation"]
+        # for column in eval_dataset.column_names:
+        #     print(f"Column '{column}' example values: {eval_dataset[column][0]}") 
         eval_dataset = eval_dataset.map(
             wrapped_tokenizer.encode_valid,
             batched=True,
@@ -166,24 +203,35 @@ def main():
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
             )
+        # for column in eval_dataset.column_names:
+        #     print(f"Column '{column}' example values: {eval_dataset[column][0]}")
     else:
         eval_dataset = datasets["validation"]
         eval_dataset = eval_dataset.map(
-            wrapped_tokenizer.encode_valid,
+            wrapped_tokenizer.encode_test,
             batched=True,
             remove_columns=eval_dataset.column_names,
             )
     
     # Data collator
-    data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
+    # data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
+    data_collator = DataCollatorForSeq2Seq(
+            wrapped_tokenizer.tokenizer,
+            model=model,
+            pad_to_multiple_of=8 if training_args.fp16 else None
+        )
 
     # Metric for evaluation
     metric = load_metric("squad")
+    # def compute_metrics(eval_predictions):
+    #     return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
     def compute_metrics(eval_predictions):
+        # print(vars(eval_predictions))
+        # formatted_predictions, references = wrapped_tokenizer.decode(eval_predictions, training_args)
         return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
     
     # Trainer for training, evaluation, and prediction
-    trainer = QuestionAnsweringTrainer(
+    trainer = GenerationBasedSeq2SeqTrainer(
         model=model,
         args=training_args,
         config=config,
