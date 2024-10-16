@@ -548,14 +548,14 @@ if __name__ == "__main__":
         # test bulk
         with timer("bulk query by exhaustive search"):
             df = retriever.retrieve_faiss(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
+            df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
 
             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
 
     else:
         with timer("bulk query by exhaustive search"):
             df = retriever.retrieve(full_ds, topk=1)
-            df["correct"] = df["original_context"] == df["context"]
+            df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
             print(
                 "correct retrieval result by exhaustive search",
                 df["correct"].sum() / len(df),
