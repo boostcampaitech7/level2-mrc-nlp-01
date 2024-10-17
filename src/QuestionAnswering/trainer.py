@@ -15,8 +15,9 @@
 """
 Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
-from transformers import Trainer, is_datasets_available, is_torch_tpu_available
+from transformers import Trainer, Seq2SeqTrainer, is_datasets_available, is_torch_tpu_available, EvalPrediction
 from transformers.trainer_utils import PredictionOutput
+import collections, os, json, tqdm
 
 from QuestionAnswering.utils import postprocess_qa_predictions 
 
@@ -124,3 +125,84 @@ class QuestionAnsweringTrainer(Trainer):
             output_dir=args.output_dir,
         )
         return self.wrapped_tokenizer.decode(examples, predictions, args)
+
+
+class GenerationBasedSeq2SeqTrainer(Seq2SeqTrainer):
+    def __init__(self, *args, config=None, eval_examples=None, wrapped_tokenizer=None, **kwargs):
+        super().__init__(*args, tokenizer=wrapped_tokenizer.tokenizer, **kwargs)
+        self.eval_examples = eval_examples
+        self.wrapped_tokenizer = wrapped_tokenizer
+        self.max_answer_length = config.dataQA.tokenizer.max_answer_length(30)
+
+        # _gen_kwargs 설정
+        self._gen_kwargs = {
+            "max_length": config.dataQA.tokenizer.max_answer_length(30),
+            "num_beams": config.dataQA.generation.num_beams(3),  # Beam Search 예시, 필요에 따라 수정 가능
+        }
+
+    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
+        eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
+        eval_dataloader = self.get_eval_dataloader(eval_dataset)
+        eval_examples = self.eval_examples if eval_examples is None else eval_examples
+
+        # 임시로 metric 계산을 비활성화하고 평가 수행
+        compute_metrics = self.compute_metrics
+        self.compute_metrics = None
+        try:
+            output = self.prediction_loop(
+                eval_dataloader,
+                description="Evaluation",
+                prediction_loss_only=True if compute_metrics is None else None,
+                ignore_keys=ignore_keys,
+            )
+        finally:
+            self.compute_metrics = compute_metrics
+
+        if self.post_process_function is not None and self.compute_metrics is not None:
+            eval_preds = self.post_process_function(
+                eval_examples, eval_dataset, output.predictions, self.args
+            )
+            metrics = self.compute_metrics(eval_preds)
+
+            self.log(metrics)
+        else:
+            metrics = {}
+
+        if self.args.tpu_metrics_debug or self.args.debug:
+            xm.master_print(met.metrics_report())
+
+        self.control = self.callback_handler.on_evaluate(
+            self.args, self.state, self.control, metrics
+        )
+        return metrics
+
+    def predict(self, test_dataset, test_examples, ignore_keys=None):
+        test_dataloader = self.get_test_dataloader(test_dataset)
+
+        # 임시로 metric 계산을 비활성화하고 예측 수행
+        compute_metrics = self.compute_metrics
+        self.compute_metrics = None
+        try:
+            output = self.prediction_loop(
+                test_dataloader,
+                description="Evaluation",
+                prediction_loss_only=True if compute_metrics is None else None,
+                ignore_keys=ignore_keys,
+            )
+        finally:
+            self.compute_metrics = compute_metrics
+
+        if self.post_process_function is None or self.compute_metrics is None:
+            return output
+
+        predictions = self.post_process_function(
+            test_examples, test_dataset, output.predictions, self.args
+        )
+        return predictions
+    
+    def post_process_function(self, examples, features, predictions, args):
+        """
+        생성된 텍스트 예측을 처리하고, EvalPrediction 객체로 반환하는 함수.
+        """
+        # # EvalPrediction 객체로 예측과 레이블을 감싸서 반환
+        return self.wrapped_tokenizer.decode(examples, features, predictions, args)
