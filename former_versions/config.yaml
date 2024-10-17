@@ -14,11 +14,10 @@ training:
   scheduler: linear # HF default = "linear"
 
 dataRetrieval:
-  type: sparseDense
+  type: sparse
   eval: True
   context_path: ./data/wikipedia_documents.json
   top_k: 10
-  sparse_ratio: 0.5  # 추가: sparse와 dense 결과의 가중치 (0 <= ratio <= 1)
   faiss:
     use: False
     num_clusters: 64
