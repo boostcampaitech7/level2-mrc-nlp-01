@@ -266,24 +266,18 @@ class Seq2SeqLMTokenizerWrapper:
         """
         예측 결과를 디코딩하고, 평가에 적합한 포맷으로 반환합니다.
         """
+        # 'predictions'에서 실제 예측된 텍스트 토큰 시퀀스를 추출
         preds = predictions
 
         preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
         decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
         formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
-        # print("!!!!!!!!!!!!!decoded_preds!!!!!!!!!!!!!!!!")
-        # print(decoded_preds)
+
         if not training_args.do_predict:
             labels = np.array(features['labels'])
             labels = np.where((labels >= 0) & (labels < self.tokenizer.vocab_size), labels, self.tokenizer.pad_token_id)
 
-        # if isinstance(preds, tuple):
-        #     preds = preds[0]
-        # 'predictions'에서 실제 예측된 텍스트 토큰 시퀀스를 추출
-        # preds = [pred["prediction_text"] for pred in examples.predictions]
-
             # decoded_labels is for rouge metric, not used for f1/em metric
-
             labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
             decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
 
@@ -293,11 +287,11 @@ class Seq2SeqLMTokenizerWrapper:
             references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
         
         if training_args.do_predict:
+            # prediction값 json 파일 저장 및 formatted_prediction 반환
             all_predictions = collections.OrderedDict()
             for example, pred in zip(examples, decoded_preds):
                 all_predictions[example["id"]] = pred
 
-            # print(all_predictions)
             prediction_file = "./outputs/test_dataset/predictions.json"
             with open(prediction_file, "w", encoding="utf-8") as writer:
                 writer.write(
