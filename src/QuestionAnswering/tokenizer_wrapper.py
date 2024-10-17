@@ -288,19 +288,10 @@ class Seq2SeqLMTokenizerWrapper:
             decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         # Some simple post-processing
-        #decoded_preds, decoded_labels = self.postprocess_text(decoded_preds, decoded_labels)
-
+        # decoded_preds, decoded_labels = self.postprocess_text(decoded_preds, decoded_labels)
         
             references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
         
-        # print("!!!!!!!!!!!!!formatted_predictions!!!!!!!!!!!!!!!!")
-        # print(formatted_predictions[0])
-        # print()
-        # print("!!!!!!!!!!!!!references!!!!!!!!!!!!!!!!")
-        # print(references[0])
-        # print()
-        # print(len(examples["id"]))
-        # print(len(decoded_preds))
         if training_args.do_predict:
             all_predictions = collections.OrderedDict()
             for example, pred in zip(examples, decoded_preds):
