@@ -23,8 +23,8 @@ from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedS
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
-from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
+import nltk
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -110,6 +110,9 @@ def set_hyperparameters(config, training_args):
 def main():
     config = Config()
     logger = configure_logging()
+    
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
     
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))

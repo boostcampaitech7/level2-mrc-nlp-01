@@ -252,15 +252,14 @@ class Seq2SeqLMTokenizerWrapper:
 
         return tokenized_example
     
-    def postprocess_text(self, preds, labels):
-        print(nltk.data.path)
+    def postprocess_text(self, preds):
         preds = [pred.strip() for pred in preds]
-        labels = [label.strip() for label in labels]
+        #labels = [label.strip() for label in labels]
 
         preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
-        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        #labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
 
-        return preds, labels
+        return preds#, labels
     
     def decode(self, examples, features, predictions, training_args):
         """
@@ -271,6 +270,7 @@ class Seq2SeqLMTokenizerWrapper:
 
         preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
         decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = self.postprocess_text(decoded_preds)
         formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
 
         if not training_args.do_predict:
@@ -299,6 +299,16 @@ class Seq2SeqLMTokenizerWrapper:
                 )
             return formatted_predictions
         elif training_args.do_eval:
+            # prediction값 json 파일 저장 및 formatted_prediction 반환
+            all_predictions = collections.OrderedDict()
+            for example, pred in zip(examples, decoded_preds):
+                all_predictions[example["id"]] = pred
+
+            prediction_file = "./outputs/train_dataset/predictions.json"
+            with open(prediction_file, "w", encoding="utf-8") as writer:
+                writer.write(
+                    json.dumps(all_predictions, indent=4, ensure_ascii=False) + "\n"
+                )
             return EvalPrediction(
                 predictions=formatted_predictions,
                 label_ids=references,
