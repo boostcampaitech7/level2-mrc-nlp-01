@@ -21,6 +21,13 @@ from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel,
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
 @contextmanager
 def timer(name):
     t0 = time.time()
@@ -55,6 +62,8 @@ class DenseRetrieval:
     def __init__(self) -> NoReturn:
 
         self.config = Config(path='./dense_encoder_config.yaml')
+
+        set_seed(self.config.seed())
 
         data_path = os.path.dirname(self.config.dataset.train_path())
         context_path = self.config.dataset.context_path()
