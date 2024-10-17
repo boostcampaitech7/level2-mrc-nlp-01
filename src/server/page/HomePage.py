@@ -1,5 +1,5 @@
 import streamlit as st
-from page.Page import Page
+from server.page.Page import Page
 
 class HomePage(Page):
     page_name = "Home"

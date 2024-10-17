@@ -23,6 +23,7 @@ from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedS
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
+from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
 
 def set_all_seed(seed, deterministic=False):
@@ -34,6 +35,10 @@ def set_all_seed(seed, deterministic=False):
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+@dataclass
+class DataArguments:
+    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
 
 @dataclass
 class DataArguments:
@@ -67,7 +72,24 @@ def use_small_datasets(datasets):
     return {key: cut(dataset) for key, dataset in datasets.items()}
 
 def use_proper_output_dir(config, training_args):
+def use_proper_datasets(config, training_args):
+    if training_args.do_train or training_args.do_eval:
+        return load_from_disk(config.dataQA.path.train('./data/train_dataset')) 
+    elif training_args.do_predict:
+        return load_from_disk(config.dataQA.path.test('./data/test_dataset'))
+    else:
+        return None
+
+def use_small_datasets(datasets):
+    def cut(dataset):
+        length = len(dataset)
+        return dataset.select(range(length // 100))
+    return {key: cut(dataset) for key, dataset in datasets.items()}
+
+def use_proper_output_dir(config, training_args):
     if training_args.do_train:
+        # do_train의 결과는 model이므로
+        return config.output.model('./models/train_dataset')
         # do_train의 결과는 model이므로
         return config.output.model('./models/train_dataset')
     elif training_args.do_eval:
@@ -112,6 +134,9 @@ def main():
     training_args.output_dir = use_proper_output_dir(config, training_args)
     training_args = set_hyperparameters(config, training_args)
     is_testing = True if data_args.testing else config.testing(False)
+    training_args.output_dir = use_proper_output_dir(config, training_args)
+    training_args = set_hyperparameters(config, training_args)
+    is_testing = True if data_args.testing else config.testing(False)
     set_all_seed(config.seed())
 
     logger.info("Training/evaluation parameters %s", training_args)
@@ -135,6 +160,17 @@ def main():
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
         print('*****doing eval or predict*****')
+        if config.dataRetrieval.type() == "sparse":
+            retriever = SparseRetrieval(
+                tokenize_fn=tokenizer.tokenize,
+                context_path=config.dataRetrieval.context_path(),
+                testing=is_testing,
+            )
+        elif config.dataRetrieval.type() == "dense":
+            retriever = DenseRetrieval(
+                model_name=model_name,
+                context_path=config.dataRetrieval.context_path(),
+            )
         if config.dataRetrieval.type() == "sparse":
             retriever = SparseRetrieval(
                 tokenize_fn=tokenizer.tokenize,
