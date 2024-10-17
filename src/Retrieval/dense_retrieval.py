@@ -56,7 +56,7 @@ class DenseRetrieval:
 
         self.config = Config(path='./dense_encoder_config.yaml')
 
-        data_path = self.config.dataset.train_path()
+        data_path = os.path.dirname(self.config.dataset.train_path())
         context_path = self.config.dataset.context_path()
 
         self.data_path = data_path
@@ -499,7 +499,7 @@ if __name__ == "__main__":
     retriever = DenseRetrieval()
 
     # Test sparse
-    org_dataset = load_from_disk(retriever.data_path)
+    org_dataset = load_from_disk(os.path.join(retriever.data_path, "./train_dataset"))
     full_ds = concatenate_datasets(
         [
             org_dataset["train"].flatten_indices(),
