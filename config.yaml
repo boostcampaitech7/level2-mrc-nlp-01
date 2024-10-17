@@ -15,14 +15,6 @@ training:
 
 dataRetrieval:
   type: sparse
-  args:
-    output_dir: "dense_retireval"
-    evaluation_strategy: "epoch"
-    learning_rate: 2e-5
-    per_device_train_batch_size: 2
-    per_device_eval_batch_size: 2
-    num_train_epochs: 5
-    weight_decay: 0.01
   eval: True
   context_path: ./data/wikipedia_documents.json
   top_k: 10

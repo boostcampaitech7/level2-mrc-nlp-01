@@ -1,4 +1,5 @@
 import json
+import sys
 import os
 import pickle
 import time
@@ -16,6 +17,9 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenat
 from tqdm.auto import tqdm
 from tqdm import trange
 from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import Config
 
 @contextmanager
 def timer(name):
@@ -48,26 +52,15 @@ class BertEncoder(BertPreTrainedModel):
         return pooled_output
 
 class DenseRetrieval:
-    def __init__(
-        self,
-        model_name: str,
-        context_path: Optional[str] = "wikipedia_documents.json",
-        args: Optional[TrainingArguments] = TrainingArguments(
-            output_dir="dense_retireval",
-            evaluation_strategy="epoch",
-            learning_rate=2e-5,
-            per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
-            num_train_epochs=5,
-            weight_decay=0.01
-        ),
-        num_negatives: Optional[int] = 2,
-    ) -> NoReturn:
+    def __init__(self) -> NoReturn:
 
-        data_path = os.path.dirname(context_path)
-        context_path = os.path.basename(context_path)
+        self.config = Config(path='./dense_encoder_config.yaml')
+
+        data_path = self.config.dataset.train_path()
+        context_path = self.config.dataset.context_path()
+
         self.data_path = data_path
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+        with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(
@@ -80,15 +73,22 @@ class DenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.max_len = 512
         
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
-        self.p_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
-        self.q_encoder = BertEncoder.from_pretrained(model_name).to(self.device)
+        self.model_name = self.config.model.name()
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModel.from_pretrained(self.model_name)
+        self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+        self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
         self.p_embeddings = None
 
-        self.num_negatives = num_negatives
-
-        self.args = args
+        self.num_negatives = self.config.training.num_negative()
+        self.args =TrainingArguments(
+            output_dir=self.config.training.output_dir(),
+            learning_rate=float(self.config.training.learning_rate()),
+            per_device_train_batch_size=self.config.training.per_device_train_batch_size(),
+            per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
+            num_train_epochs=self.config.training.epochs(),
+            weight_decay=self.config.training.weight_decay(),
+            )
         self.indexer = None
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
@@ -190,6 +190,7 @@ class DenseRetrieval:
                     sim_scores = F.log_softmax(sim_scores, dim=1)
                 
                     loss = F.nll_loss(sim_scores, targets)
+                    
                     tepoch.set_postfix(loss=f"{str(loss.item())}", step=f"{global_step+1}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
 
                     loss.backward()
@@ -494,28 +495,11 @@ class DenseRetrieval:
         return datasets
 
 if __name__ == "__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
-    )
-    parser.add_argument(
-        "--model_name_or_path",
-        metavar="bert-base-multilingual-cased",
-        type=str,
-        help="",
-    )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
-    parser.add_argument(
-        "--context_path", metavar="wikipedia_documents", type=str, help=""
-    )
-    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-
-    args = parser.parse_args()
+    retriever = DenseRetrieval()
 
     # Test sparse
-    org_dataset = load_from_disk(args.dataset_name)
+    org_dataset = load_from_disk(retriever.data_path)
     full_ds = concatenate_datasets(
         [
             org_dataset["train"].flatten_indices(),
@@ -525,10 +509,6 @@ if __name__ == "__main__":
     print("*" * 40, "query dataset", "*" * 40)
     print(full_ds)
 
-    retriever = DenseRetrieval(
-        model_name=args.model_name_or_path,
-        context_path=args.context_path,
-    )
 
     if os.path.exists(os.path.join(retriever.data_path, "p_encoder")) and os.path.exists(os.path.join(retriever.data_path, "q_encoder")):
         retriever.p_encoder = BertEncoder.from_pretrained(os.path.join(retriever.data_path, "p_encoder"))
@@ -537,12 +517,12 @@ if __name__ == "__main__":
         retriever.train()
     
     retriever.get_dense_embedding()
-    if args.use_faiss:
+    if retriever.config.faiss.use():
         retriever.build_faiss()
 
     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
 
-    if args.use_faiss:
+    if retriever.config.faiss.use():
 
         # test single query
         with timer("single query by faiss"):
