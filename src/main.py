@@ -72,24 +72,7 @@ def use_small_datasets(datasets):
     return {key: cut(dataset) for key, dataset in datasets.items()}
 
 def use_proper_output_dir(config, training_args):
-def use_proper_datasets(config, training_args):
-    if training_args.do_train or training_args.do_eval:
-        return load_from_disk(config.dataQA.path.train('./data/train_dataset')) 
-    elif training_args.do_predict:
-        return load_from_disk(config.dataQA.path.test('./data/test_dataset'))
-    else:
-        return None
-
-def use_small_datasets(datasets):
-    def cut(dataset):
-        length = len(dataset)
-        return dataset.select(range(length // 100))
-    return {key: cut(dataset) for key, dataset in datasets.items()}
-
-def use_proper_output_dir(config, training_args):
     if training_args.do_train:
-        # do_train의 결과는 model이므로
-        return config.output.model('./models/train_dataset')
         # do_train의 결과는 model이므로
         return config.output.model('./models/train_dataset')
     elif training_args.do_eval:
@@ -149,28 +132,18 @@ def main():
         datasets = use_small_datasets(datasets)
 
     # Load model and tokenizer
-    
     model_name = use_proper_model(config, training_args)
     config_hf = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    ## 여기 if문으로 바꿔
-    # model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
+    # Generation 여부에 따라 모델 선택
+    if config.training.predict_with_generate():
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
+    else:
+        model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
         print('*****doing eval or predict*****')
-        if config.dataRetrieval.type() == "sparse":
-            retriever = SparseRetrieval(
-                tokenize_fn=tokenizer.tokenize,
-                context_path=config.dataRetrieval.context_path(),
-                testing=is_testing,
-            )
-        elif config.dataRetrieval.type() == "dense":
-            retriever = DenseRetrieval(
-                model_name=model_name,
-                context_path=config.dataRetrieval.context_path(),
-            )
         if config.dataRetrieval.type() == "sparse":
             retriever = SparseRetrieval(
                 tokenize_fn=tokenizer.tokenize,
@@ -193,15 +166,19 @@ def main():
     if training_args.do_predict:
         _, max_seq_length = check_no_error(config, training_args, datasets, tokenizer)
         config.dataQA.tokenizer.max_seq_length.atom = max_seq_length
-        ## 여기도 if문으로
-        # wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
-        wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        # Generation 여부에 따라 tokenizer 선택
+        if config.training.predict_with_generate():
+            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        else:
+            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         
     else:
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
-        ## 여기도 if문으로
-        #wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
-        wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        # Generation 여부에 따라 tokenizer 선택
+        if config.training.predict_with_generate():
+            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        else:
+            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
     
     train_dataset, eval_dataset = None, None
@@ -225,13 +202,19 @@ def main():
             )
     else:
         eval_dataset = datasets["validation"]
-        eval_dataset = eval_dataset.map(
-            ## 여기도 분리
-            # wrapped_tokenizer.encode_valid,
-            wrapped_tokenizer.encode_test,
-            batched=True,
-            remove_columns=eval_dataset.column_names,
-            )
+        # Generation 여부에 따라 encoding method 선택
+        if config.training.predict_with_generate():
+            eval_dataset = eval_dataset.map(
+                wrapped_tokenizer.encode_test,
+                batched=True,
+                remove_columns=eval_dataset.column_names,
+                )
+        else:
+            eval_dataset = eval_dataset.map(
+                wrapped_tokenizer.encode_valid,
+                batched=True,
+                remove_columns=eval_dataset.column_names,
+                )
     
     # Data collator
     data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
@@ -247,19 +230,21 @@ def main():
         return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
     
     # Trainer for training, evaluation, and prediction
-    ## 여기도 나누기
-    # trainer = QuestionAnsweringTrainer(
-    #     model=model,
-    #     args=training_args,
-    #     config=config,
-    #     train_dataset=train_dataset,
-    #     eval_dataset=eval_dataset,
-    #     eval_examples=datasets["validation"] if training_args.do_eval else None,
-    #     data_collator=data_collator,
-    #     compute_metrics=compute_metrics,
-    #     wrapped_tokenizer=wrapped_tokenizer,
-    # )
-    trainer = GenerationBasedSeq2SeqTrainer(
+    # Generation 여부에 따라 Trainer 선택
+    if config.training.predict_with_generate():
+        trainer = GenerationBasedSeq2SeqTrainer(
+            model=model,
+            args=training_args,
+            config=config,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics,
+            wrapped_tokenizer=wrapped_tokenizer,
+        )
+    else:
+        trainer = QuestionAnsweringTrainer(
         model=model,
         args=training_args,
         config=config,
