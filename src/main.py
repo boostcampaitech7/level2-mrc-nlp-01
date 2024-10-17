@@ -154,10 +154,7 @@ def main():
                 testing=is_testing,
             )
         elif config.dataRetrieval.type() == "dense":
-            retriever = DenseRetrieval(
-                model_name=model_name,
-                context_path=config.dataRetrieval.context_path(),
-            )
+            retriever = DenseRetrieval()
         datasets = retriever.run(datasets, training_args, config)
 
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
