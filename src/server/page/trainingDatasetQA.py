@@ -82,17 +82,10 @@ class TrainingDatasetQAPage(Page):
         
         question = data["question"]
         context = data["context"]
-        st.markdown(
-            """
-            <style>
-            .stCode {color: red !important;}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+
+        st.write("---\nQ: "+question)
         
         is_answer = [False for _ in context]
-        highlighted_context = context
         for (text, idx) in answers:
             end_idx = idx + len(text)
             for i in range(idx, end_idx):
@@ -103,23 +96,24 @@ class TrainingDatasetQAPage(Page):
         
         tokenizer = self.load_tokenizer()
         is_unk = self.get_is_unk(context, tokenizer)
-        colors = self.get_idx_color("blue", colors, is_unk)
-        
-        highlighted_context = self.highlight(highlighted_context, colors)
-        
-        context = context.replace("\\n", "\n")
-        highlighted_context = highlighted_context.replace("\\n", "\n")
-        
-        st.write("---\nQ: "+question)
+        nonannotated_context = context
+        if st.checkbox("UNK 토큰 표시"):
+            colors = self.get_idx_color("blue", colors, is_unk)
+            nonannotated_colors = [None for _ in context]
+            nonannotated_colors = self.get_idx_color("blue", nonannotated_colors, is_unk)
+            nonannotated_context = self.highlight(context, nonannotated_colors)
+        annotated_context = self.highlight(context, colors)
+        nonannotated_context = nonannotated_context.replace("\\n", "\n")
+        annotated_context = annotated_context.replace("\\n", "\n")
         
         # # st.header("Context")
         # placeholder = st.empty()
         if st.checkbox("정답 공개"):
             st.write("---")
-            st.write(highlighted_context)
+            st.write(annotated_context)
         else:
             st.write("---")
-            st.write(context)
+            st.write(nonannotated_context)
         
     
     def body(self):
