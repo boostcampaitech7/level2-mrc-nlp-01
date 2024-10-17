@@ -11,7 +11,7 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value
 from tqdm.auto import tqdm
 
 from sparse_retrieval import SparseRetrieval
-from dense_retrieval import DenseRetrieval  # Dense 검색 클래스가 이미 구현되어 있다고 가정
+from dense_retrieval import DenseRetrieval 
 
 @contextmanager
 def timer(name):
@@ -62,54 +62,34 @@ class SparseDenseRetrieval:
         self.ids = list(range(len(self.contexts)))
 
 
-    def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
-    ) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, use_faiss: bool = False) -> Union[Tuple[List, List], pd.DataFrame]:
+        if isinstance(query_or_dataset, str):#쿼리가 1개일 떄
+            return self.retrieve_single(query_or_dataset, topk=topk, use_faiss=use_faiss)
+        elif isinstance(query_or_dataset, Dataset):#쿼리가 다수일 때
+            return self.retrieve_multi(query_or_dataset, topk=topk, use_faiss=use_faiss)
 
-        """
-        Arguments:
-            query_or_dataset (Union[str, Dataset]):
-                str이나 Dataset으로 이루어진 Query를 받습니다.
-                str 형태인 하나의 query만 받으면 `retrieve_single`을 통해 유사도를 구합니다.
-                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
-                이 경우 `retrieve_multi`를 통해 유사도를 구합니다.
-            topk (Optional[int], optional): Defaults to 1.
-                상위 몇 개의 passage를 사용할 것인지 지정합니다.
-
-        Returns:
-            1개의 Query를 받는 경우  -> Tuple(List, List)
-            다수의 Query를 받는 경우 -> pd.DataFrame
-        """
-
-        if isinstance(query_or_dataset, str):
-            return self.retrieve_single(query_or_dataset, topk=topk)
-        elif isinstance(query_or_dataset, Dataset):
-            return self.retrieve_multi(query_or_dataset, topk=topk)
-
-
-
-    def retrieve_single(self, query: str, topk: Optional[int] = 1) -> Tuple[List, List]:
-        sparse_scores, sparse_indices = self.sparse_retriever.retrieve(query, topk=topk)
-        dense_scores, dense_indices = self.dense_retriever.retrieve(query, topk=topk)
+    def retrieve_single(self, query: str, topk: Optional[int] = 1, use_faiss: bool = False) -> Tuple[List, List]:
+        if use_faiss:#faiss 사용 여부
+            sparse_scores, sparse_indices = self.sparse_retriever.retrieve_faiss(query, topk=topk)
+            dense_scores, dense_indices = self.dense_retriever.retrieve_faiss(query, topk=topk)
+        else:#faiss 사용 안할 때
+            sparse_scores, sparse_indices = self.sparse_retriever.retrieve(query, topk=topk)
+            dense_scores, dense_indices = self.dense_retriever.retrieve(query, topk=topk)
         
         merged_scores, merged_indices = self._merge_results(sparse_scores, sparse_indices, dense_scores, dense_indices, topk)
         
         return merged_scores, [self.contexts[i] for i in merged_indices]
 
-    def retrieve_multi(self, dataset: Dataset, topk: Optional[int] = 1) -> pd.DataFrame:
-        # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+    def retrieve_multi(self, dataset: Dataset, topk: Optional[int] = 1, use_faiss: bool = False) -> pd.DataFrame:
         total = []
         with timer("query hybrid search"):
             for example in tqdm(dataset, desc="Hybrid retrieval: "):
-                sparse_scores, sparse_indices = self.sparse_retriever.retrieve(example["question"], topk=topk)
-                dense_scores, dense_indices = self.dense_retriever.retrieve(example["question"], topk=topk)
-                
-                merged_scores, merged_indices = self._merge_results(sparse_scores, sparse_indices, dense_scores, dense_indices, topk)
+                scores, indices = self.retrieve_single(example["question"], topk=topk, use_faiss=use_faiss)
                 
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join([self.contexts[i] for i in merged_indices])
+                    "context": " ".join([self.contexts[i] for i in indices])
                 }
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
@@ -117,43 +97,31 @@ class SparseDenseRetrieval:
                 total.append(tmp)
 
         return pd.DataFrame(total)
-    
 
     def _merge_results(self, sparse_scores, sparse_indices, dense_scores, dense_indices, topk):
-        all_indices = list(set(sparse_indices + dense_indices))
-        merged_scores = []
+        merged_dict = {}
+        for score, idx in zip(sparse_scores, sparse_indices):
+            merged_dict[idx] = self.ratio * score
+        for score, idx in zip(dense_scores, dense_indices):
+            merged_dict[idx] = merged_dict.get(idx, 0) + (1 - self.ratio) * score
 
-        for idx in all_indices:
-            sparse_score = sparse_scores[sparse_indices.index(idx)] if idx in sparse_indices else 0
-            dense_score = dense_scores[dense_indices.index(idx)] if idx in dense_indices else 0
-            merged_score = self.ratio * sparse_score + (1 - self.ratio) * dense_score
-            merged_scores.append((merged_score, idx))
-
-        merged_scores.sort(reverse=True)
-        return [score for score, _ in merged_scores[:topk]], [idx for _, idx in merged_scores[:topk]]
-
+        merged_scores = sorted(merged_dict.items(), key=lambda x: x[1], reverse=True)[:topk]
+        return [score for _, score in merged_scores], [idx for idx, _ in merged_scores]
 
     def run(self, datasets, training_args, config):
-        # Sparse와 Dense 임베딩
         self.sparse_retriever.get_sparse_embedding()
         self.dense_retriever.get_dense_embedding()
         
-        if config.dataRetrieval.faiss.use(False):
-            self.sparse_retriever.build_faiss(
-                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
-            )
-            self.dense_retriever.build_faiss(
-                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
-            )
-            df = self.retrieve_faiss(
-                datasets["validation"],
-                topk=config.dataRetrieval.top_k(5),
-            )
-        else:
-            df = self.retrieve(
-                datasets["validation"],
-                topk=config.dataRetrieval.top_k(5),
-            )
+        use_faiss = config.dataRetrieval.faiss.use(False)
+        if use_faiss:
+            self.sparse_retriever.build_faiss(num_clusters=config.dataRetrieval.faiss.num_clusters(64))
+            self.dense_retriever.build_faiss(num_clusters=config.dataRetrieval.faiss.num_clusters(64))
+        
+        df = self.retrieve(
+            datasets["validation"],
+            topk=config.dataRetrieval.top_k(5),
+            use_faiss=use_faiss
+        )
         
         if training_args.do_predict:
             f = Features(
@@ -180,3 +148,80 @@ class SparseDenseRetrieval:
         
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
+
+if __name__ == "__main__":
+    import argparse
+    from datasets import load_from_disk, concatenate_datasets
+    from transformers import AutoTokenizer
+    from dense_retrieval import DenseRetrieval, BertEncoder
+    from sparse_retrieval import SparseRetrieval
+
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("--dataset_name", metavar="./data/train_dataset", type=str, help="")
+    parser.add_argument("--model_name_or_path", metavar="bert-base-multilingual-cased", type=str, help="")
+    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument("--context_path", metavar="wikipedia_documents", type=str, help="")
+    parser.add_argument("--use_faiss", action="store_true", help="Use FAISS for retrieval")
+    parser.add_argument("--ratio", type=float, default=0.5, help="Ratio for sparse and dense results")
+
+    args = parser.parse_args()
+
+    # 데이터셋 로드
+    org_dataset = load_from_disk(args.dataset_name)
+    full_ds = concatenate_datasets([
+        org_dataset["train"].flatten_indices(),
+        org_dataset["validation"].flatten_indices(),
+    ])
+    print("*" * 40, "query dataset", "*" * 40)
+    print(full_ds)
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
+    
+    sparse_retriever = SparseRetrieval(
+        tokenize_fn=tokenizer.tokenize,
+        data_path=args.data_path,
+        context_path=args.context_path
+    )
+
+    dense_retriever = DenseRetrieval(
+        model_name=args.model_name_or_path,
+        context_path=args.context_path,
+    )
+
+    retriever = SparseDenseRetrieval(
+        sparse_retriever=sparse_retriever,
+        dense_retriever=dense_retriever,
+        ratio=args.ratio,
+        context_path=args.context_path,
+    )
+
+    sparse_retriever.get_sparse_embedding()
+    if os.path.exists(os.path.join(dense_retriever.data_path, "p_encoder")) and os.path.exists(os.path.join(dense_retriever.data_path, "q_encoder")):
+        dense_retriever.p_encoder = BertEncoder.from_pretrained(os.path.join(dense_retriever.data_path, "p_encoder"))
+        dense_retriever.q_encoder = BertEncoder.from_pretrained(os.path.join(dense_retriever.data_path, "q_encoder"))
+    else:
+        dense_retriever.train()
+    
+    dense_retriever.get_dense_embedding()
+    if args.use_faiss:
+        sparse_retriever.build_faiss()
+        dense_retriever.build_faiss()
+
+    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
+
+    print("\n", "=" * 40, "Single Query Test", "=" * 40)
+    with timer("single query"):
+        scores, indices = retriever.retrieve(query, use_faiss=args.use_faiss)
+    print(f"Query: {query}")
+    for i, (score, context) in enumerate(zip(scores[:5], indices[:5])):
+        print(f"Top-{i+1} passage with score {score:.4f}")
+        print(f"Context: {context[:50]}...\n")
+
+    print("\n", "=" * 40, "Bulk Query Test", "=" * 40)
+    with timer("bulk query"):
+        df = retriever.retrieve(full_ds, use_faiss=args.use_faiss)
+        df["correct"] = df["original_context"] == df["context"]
+        accuracy = df["correct"].sum() / len(df)
+        print(f"Correct retrieval result: {accuracy:.4f}")
+
+    print("\nRetrieval test completed.")
