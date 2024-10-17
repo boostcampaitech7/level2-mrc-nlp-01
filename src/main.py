@@ -9,19 +9,22 @@ from evaluate import load as load_metric
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
+    AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorWithPadding,
+    DataCollatorForSeq2Seq,
     HfArgumentParser,
     TrainingArguments,
     set_seed,
 )
 from config import Config
 from QuestionAnswering.utils import check_no_error
-from QuestionAnswering.trainer import QuestionAnsweringTrainer
-from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper
+from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedSeq2SeqTrainer
+from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
+import nltk
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -32,6 +35,10 @@ def set_all_seed(seed, deterministic=False):
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+@dataclass
+class DataArguments:
+    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
 
 @dataclass
 class DataArguments:
@@ -90,6 +97,13 @@ def set_hyperparameters(config, training_args):
     training_args.learning_rate = float(config.training.learning_rate())
     training_args.weight_decay = float(config.training.weight_decay())
     training_args.lr_scheduler_type  = config.training.scheduler()
+    training_args.predict_with_generate  = config.training.predict_with_generate()
+    training_args.save_strategy = 'epoch',
+    training_args.evaluation_strategy = 'epoch',
+    training_args.save_total_limit = 2,
+    training_args.logging_strategy = 'epoch',
+    training_args.load_best_model_at_end = True,
+    training_args.remove_unused_columns = True
 
     return training_args
 
@@ -97,9 +111,15 @@ def main():
     config = Config()
     logger = configure_logging()
     
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
+    
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
+    training_args.output_dir = use_proper_output_dir(config, training_args)
+    training_args = set_hyperparameters(config, training_args)
+    is_testing = True if data_args.testing else config.testing(False)
     training_args.output_dir = use_proper_output_dir(config, training_args)
     training_args = set_hyperparameters(config, training_args)
     is_testing = True if data_args.testing else config.testing(False)
@@ -115,11 +135,14 @@ def main():
         datasets = use_small_datasets(datasets)
 
     # Load model and tokenizer
-    
     model_name = use_proper_model(config, training_args)
     config_hf = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
+    # Generation 여부에 따라 모델 선택
+    if config.training.predict_with_generate():
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
+    else:
+        model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
@@ -131,10 +154,7 @@ def main():
                 testing=is_testing,
             )
         elif config.dataRetrieval.type() == "dense":
-            retriever = DenseRetrieval(
-                model_name=model_name,
-                context_path=config.dataRetrieval.context_path(),
-            )
+            retriever = DenseRetrieval()
         datasets = retriever.run(datasets, training_args, config)
 
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
@@ -146,11 +166,19 @@ def main():
     if training_args.do_predict:
         _, max_seq_length = check_no_error(config, training_args, datasets, tokenizer)
         config.dataQA.tokenizer.max_seq_length.atom = max_seq_length
-        wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
+        # Generation 여부에 따라 tokenizer 선택
+        if config.training.predict_with_generate():
+            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        else:
+            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         
     else:
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
-        wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
+        # Generation 여부에 따라 tokenizer 선택
+        if config.training.predict_with_generate():
+            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+        else:
+            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
     
     train_dataset, eval_dataset = None, None
@@ -174,14 +202,27 @@ def main():
             )
     else:
         eval_dataset = datasets["validation"]
-        eval_dataset = eval_dataset.map(
-            wrapped_tokenizer.encode_valid,
-            batched=True,
-            remove_columns=eval_dataset.column_names,
-            )
+        # Generation 여부에 따라 encoding method 선택
+        if config.training.predict_with_generate():
+            eval_dataset = eval_dataset.map(
+                wrapped_tokenizer.encode_test,
+                batched=True,
+                remove_columns=eval_dataset.column_names,
+                )
+        else:
+            eval_dataset = eval_dataset.map(
+                wrapped_tokenizer.encode_valid,
+                batched=True,
+                remove_columns=eval_dataset.column_names,
+                )
     
     # Data collator
     data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
+    data_collator = DataCollatorForSeq2Seq(
+            wrapped_tokenizer.tokenizer,
+            model=model,
+            pad_to_multiple_of=8 if training_args.fp16 else None
+        )
 
     # Metric for evaluation
     metric = load_metric("squad")
@@ -189,7 +230,21 @@ def main():
         return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
     
     # Trainer for training, evaluation, and prediction
-    trainer = QuestionAnsweringTrainer(
+    # Generation 여부에 따라 Trainer 선택
+    if config.training.predict_with_generate():
+        trainer = GenerationBasedSeq2SeqTrainer(
+            model=model,
+            args=training_args,
+            config=config,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics,
+            wrapped_tokenizer=wrapped_tokenizer,
+        )
+    else:
+        trainer = QuestionAnsweringTrainer(
         model=model,
         args=training_args,
         config=config,

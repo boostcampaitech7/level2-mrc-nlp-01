@@ -1,4 +1,8 @@
 from transformers import EvalPrediction
+import numpy as np
+import nltk
+import collections, os, json
+from tqdm import tqdm
 
 class QuestionAnsweringTokenizerWrapper:
     def __init__(self, tokenizer, config, column_name_dict = {"question": "question", "context": "context", "answers": "answers"}):
@@ -154,4 +158,158 @@ class QuestionAnsweringTokenizerWrapper:
             return EvalPrediction(
                 predictions=formatted_predictions,
                 label_ids=[{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples],
+            )
+
+
+class Seq2SeqLMTokenizerWrapper:
+    def __init__(self, tokenizer, config, column_name_dict={"question": "question", "context": "context", "answers": "answers"}):
+        self.tokenizer = tokenizer
+        
+        # 컬럼 이름을 저장합니다.
+        self.question_column = column_name_dict.get("question", "question")
+        self.context_column = column_name_dict.get("context", "context")
+        self.answer_column = column_name_dict.get("answers", "answers")
+        
+        # 토크나이저 설정
+        self.max_seq_length = config.dataQA.tokenizer.max_seq_length(384)
+        self.max_answer_length = config.dataQA.tokenizer.max_answer_length(30)
+        self.pad_to_max_length = config.dataQA.tokenizer.pad_to_max_length(True)
+        
+    def tokenize(self, examples):
+        # 질문과 문맥을 하나의 시퀀스로 결합하여 토크나이징
+        inputs = [
+            f"question: {q} context: {c}" 
+            for q, c in zip(examples[self.question_column], examples[self.context_column])
+        ]
+        # 모델 입력을 위한 토크나이징
+        model_inputs = self.tokenizer(
+            inputs,
+            max_length=self.max_seq_length,
+            truncation=True,
+            padding="max_length" if self.pad_to_max_length else False,
+            return_tensors='pt'
+        )
+        
+        return model_inputs
+
+    def encode_train(self, examples):
+        """
+        학습 데이터를 인코딩합니다. 질문과 문맥을 결합한 후 답변을 레이블로 설정합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        # 답변을 레이블로 설정
+        targets = [f'{a["text"][0]}' for a in examples[self.answer_column]]
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(
+                targets, 
+                max_length=self.max_answer_length,
+                truncation=True,
+                padding="max_length" if self.pad_to_max_length else False,
+                return_tensors='pt'
+            )
+        
+        tokenized_example["labels"] = labels["input_ids"]
+        tokenized_example["labels"][tokenized_example["labels"] == self.tokenizer.pad_token_id] = -100
+        tokenized_example["example_id"] = []
+        
+        for i in range(len(tokenized_example["labels"])):
+            tokenized_example["example_id"].append(examples["id"][i])
+
+        return tokenized_example
+
+    def encode_valid(self, examples):
+        """
+        검증 데이터를 인코딩합니다. 학습과 동일합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        # 답변을 레이블로 설정
+        targets = [f'{a["text"][0]}' for a in examples[self.answer_column]]
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(
+                targets, 
+                max_length=self.max_answer_length,
+                truncation=True,
+                padding="max_length" if self.pad_to_max_length else False,
+                return_tensors='pt'
+            )
+        
+        tokenized_example["labels"] = labels["input_ids"]
+        tokenized_example["labels"][tokenized_example["labels"] == self.tokenizer.pad_token_id] = -100
+        tokenized_example["example_id"] = []
+        
+        for i in range(len(tokenized_example["labels"])):
+            tokenized_example["example_id"].append(examples["id"][i])
+
+        return tokenized_example
+    
+    def encode_test(self, examples):
+        """
+        test 데이터를 인코딩합니다.
+        """
+        tokenized_example = self.tokenize(examples)
+
+        return tokenized_example
+    
+    def postprocess_text(self, preds):
+        preds = [pred.strip() for pred in preds]
+        #labels = [label.strip() for label in labels]
+
+        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+        #labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+
+        return preds#, labels
+    
+    def decode(self, examples, features, predictions, training_args):
+        """
+        예측 결과를 디코딩하고, 평가에 적합한 포맷으로 반환합니다.
+        """
+        # 'predictions'에서 실제 예측된 텍스트 토큰 시퀀스를 추출
+        preds = predictions
+
+        preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = self.postprocess_text(decoded_preds)
+        formatted_predictions = [{"id": ex['id'], "prediction_text": pred} for ex, pred in zip(examples, decoded_preds)]
+
+        if not training_args.do_predict:
+            labels = np.array(features['labels'])
+            labels = np.where((labels >= 0) & (labels < self.tokenizer.vocab_size), labels, self.tokenizer.pad_token_id)
+
+            # decoded_labels is for rouge metric, not used for f1/em metric
+            labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
+            decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # Some simple post-processing
+        # decoded_preds, decoded_labels = self.postprocess_text(decoded_preds, decoded_labels)
+        
+            references = [{"id": ex["id"], "answers": ex[self.answer_column]} for ex in examples]
+        
+        if training_args.do_predict:
+            # prediction값 json 파일 저장 및 formatted_prediction 반환
+            all_predictions = collections.OrderedDict()
+            for example, pred in zip(examples, decoded_preds):
+                all_predictions[example["id"]] = pred
+
+            prediction_file = "./outputs/test_dataset/predictions.json"
+            with open(prediction_file, "w", encoding="utf-8") as writer:
+                writer.write(
+                    json.dumps(all_predictions, indent=4, ensure_ascii=False) + "\n"
+                )
+            return formatted_predictions
+        elif training_args.do_eval:
+            # prediction값 json 파일 저장 및 formatted_prediction 반환
+            all_predictions = collections.OrderedDict()
+            for example, pred in zip(examples, decoded_preds):
+                all_predictions[example["id"]] = pred
+
+            prediction_file = "./outputs/train_dataset/predictions.json"
+            with open(prediction_file, "w", encoding="utf-8") as writer:
+                writer.write(
+                    json.dumps(all_predictions, indent=4, ensure_ascii=False) + "\n"
+                )
+            return EvalPrediction(
+                predictions=formatted_predictions,
+                label_ids=references,
             )
