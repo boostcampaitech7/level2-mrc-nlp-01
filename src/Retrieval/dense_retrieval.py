@@ -113,9 +113,15 @@ class DenseRetrieval:
 
         p_with_neg = []
 
-        _, neg_indices = sparse_retriever.get_relevant_doc_bulk(dataset["question"], k=num_neg+1)
+        if os.path.exists(os.path.join(self.data_path, "negatives")):
+            with open(os.path.join(self.data_path, "negatives"), "rb") as file:
+                neg_indices = pickle.load(file)
+        else:
+            _, neg_indices = sparse_retriever.get_relevant_doc_bulk(dataset["question"], k=num_neg+1)
+            with open(os.path.join(self.data_path, "negatives"), "wb") as file:
+                neg_indices = pickle.dump(neg_indices, file)
 
-        for i, neg_idx in tqdm(enumerate(neg_indices)):
+        for i, neg_idx in enumerate(tqdm(neg_indices, desc="Prepare in-batch negatives")):
             neg_samples = [self.contexts[neg_idx[j]] for j in range(num_neg+1) if self.contexts[neg_idx[j]] != dataset["context"][i]]
             if len(neg_samples) > num_neg:
                 neg_samples = neg_samples[:num_neg]
