@@ -17,6 +17,7 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenat
 from tqdm.auto import tqdm
 from tqdm import trange
 from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+from sparse_retrieval import SparseRetrieval
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
@@ -106,23 +107,26 @@ class DenseRetrieval:
         if num_neg is None:
             num_neg = self.num_negatives
 
-        corpus = np.array(self.contexts)
+        # Initialize SparseRetrieval
+        sparse_retriever = SparseRetrieval(tokenize_fn=self.tokenizer.tokenize, context_path=self.config.dataset.context_path())
+        sparse_retriever.get_sparse_embedding()
+
         p_with_neg = []
 
         for c in dataset["context"]:
+            # Use sparse retriever to get negative samples
+            _, neg_indices = sparse_retriever.get_relevant_doc(c, k = num_neg+1)
+            
+            neg_samples = [self.contexts[neg_idx] for neg_idx in neg_indices if self.contexts[neg_idx] != c]
 
-            while True:
-                neg_idxs = np.random.randint(len(corpus), size=num_neg)
+            if len(neg_samples) != num_neg:
+                neg_samples = neg_samples[:num_neg]
+            
+            p_with_neg.extend([c] + neg_samples)
 
-                if not c in corpus[neg_idxs]:
-                    p_neg = corpus[neg_idxs]
 
-                    p_with_neg.append(c)
-                    p_with_neg.extend(p_neg)
-                    break
-
-        q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
-        p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
+        q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
+        p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
 
         p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
         p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
@@ -134,7 +138,7 @@ class DenseRetrieval:
         )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
-    
+
     def train(self, args=None):
         if args is None:
             args = self.args

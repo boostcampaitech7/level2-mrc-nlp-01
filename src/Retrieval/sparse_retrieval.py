@@ -246,6 +246,23 @@ class SparseRetrieval:
 
             cqas = pd.DataFrame(total)
             return cqas
+    
+    def get_relevant_doc(
+        self, query: str, k: Optional[int] = 1
+        ) -> Tuple[List, List]:
+        """
+        Arguments:
+            query (str):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        """
+        tokenized_query = self.tokenize_fn(query)
+        scores = self.bm25.get_scores(tokenized_query)
+        sorted_result = np.argsort(scores)[::-1]
+
+        doc_scores, doc_indices = scores[sorted_result][:k].tolist(), sorted_result[:k].tolist()
+        return doc_scores, doc_indices
 
     def get_relevant_doc_bulk(
         self, queries: List, k: Optional[int] = 1
