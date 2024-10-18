@@ -113,17 +113,13 @@ class DenseRetrieval:
 
         p_with_neg = []
 
-        for c in dataset["context"]:
-            # Use sparse retriever to get negative samples
-            _, neg_indices = sparse_retriever.get_relevant_doc(c, k = num_neg+1)
-            
-            neg_samples = [self.contexts[neg_idx] for neg_idx in neg_indices if self.contexts[neg_idx] != c]
+        _, neg_indices = sparse_retriever.get_relevant_doc_bulk(dataset["question"], k=num_neg+1)
 
-            if len(neg_samples) != num_neg:
+        for i, neg_idx in tqdm(enumerate(neg_indices)):
+            neg_samples = [self.contexts[neg_idx[i]] for i in range(num_neg+1) if self.contexts[neg_idx[i]] != dataset["context"][i]]
+            if len(neg_samples) > num_neg:
                 neg_samples = neg_samples[:num_neg]
-            
-            p_with_neg.extend([c] + neg_samples)
-
+            p_with_neg.extend([dataset["context"][i]] + neg_samples)
 
         q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
         p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
