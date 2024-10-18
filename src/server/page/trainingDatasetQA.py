@@ -1,5 +1,5 @@
 import streamlit as st
-from server.page.Page import Page
+from server.utils.Page import Page
 from datasets import load_from_disk
 from config import Config
 from transformers import AutoTokenizer

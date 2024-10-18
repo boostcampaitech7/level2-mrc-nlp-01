@@ -25,6 +25,7 @@ from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
 import nltk
+from torch.nn import CrossEntropyLoss
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -253,7 +254,7 @@ def main():
         eval_examples=datasets["validation"] if training_args.do_eval else None,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        wrapped_tokenizer=wrapped_tokenizer,
+        wrapped_tokenizer=wrapped_tokenizer
     )
     
     # Training
