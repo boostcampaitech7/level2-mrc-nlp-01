@@ -116,7 +116,7 @@ class DenseRetrieval:
         _, neg_indices = sparse_retriever.get_relevant_doc_bulk(dataset["question"], k=num_neg+1)
 
         for i, neg_idx in tqdm(enumerate(neg_indices)):
-            neg_samples = [self.contexts[neg_idx[i]] for i in range(num_neg+1) if self.contexts[neg_idx[i]] != dataset["context"][i]]
+            neg_samples = [self.contexts[neg_idx[j]] for j in range(num_neg+1) if self.contexts[neg_idx[j]] != dataset["context"][i]]
             if len(neg_samples) > num_neg:
                 neg_samples = neg_samples[:num_neg]
             p_with_neg.extend([dataset["context"][i]] + neg_samples)
