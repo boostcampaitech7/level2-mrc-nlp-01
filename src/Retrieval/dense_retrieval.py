@@ -126,7 +126,7 @@ class DenseRetrieval:
             if len(neg_samples) > num_neg:
                 neg_samples = neg_samples[:num_neg]
             p_with_neg.extend([dataset["context"][i]] + neg_samples)
-
+            
         q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
         p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
 
@@ -552,7 +552,7 @@ if __name__ == "__main__":
 
     else:
         with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds, topk=1)
+            df = retriever.retrieve(full_ds, topk=5)
             df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
             print(
                 "correct retrieval result by exhaustive search",
@@ -560,4 +560,4 @@ if __name__ == "__main__":
             )
 
         with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query, topk=1)
+            scores, indices = retriever.retrieve(query, topk=5)
