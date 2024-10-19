@@ -65,6 +65,7 @@ class CrossDenseRetrieval:
         self.model_name = self.config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1).to(self.device)
+        self.sampler = NegativeSampler(self.contexts)
 
         self.num_negatives = self.config.training.num_negative()
         self.args =TrainingArguments(
@@ -83,8 +84,7 @@ class CrossDenseRetrieval:
         if num_neg is None:
             num_neg = self.num_negatives
 
-        sampler = NegativeSampler(num_neg, self.contexts)
-        q_with_neg = sampler.offer_bulk(dataset)
+        q_with_neg = self.sampler.offer_bulk(dataset, num_neg)
 
         questions = q_with_neg["question"]
         contexts = q_with_neg["context"]
@@ -179,86 +179,29 @@ class CrossDenseRetrieval:
                     
         self.model.save_pretrained(os.path.join(self.data_path, f"cross_encoder"))
 
-    def build_faiss(self, num_clusters=64) -> NoReturn:
-        """
-        FAISS 인덱스를 생성하고 학습시킵니다.
-        """
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]: 
         
-        # 인덱스 생성
-        quantizer = faiss.IndexFlatL2(self.p_embeddings.shape[1])  
-        self.indexer = faiss.IndexIVFScalarQuantizer(quantizer, 
-                                                    self.p_embeddings.shape[1],
-                                                    num_clusters,
-                                                    faiss.METRIC_L2)
-        
-        # 인덱스 학습
-        self.indexer.train(self.p_embeddings.numpy())
-        
-        # 벡터 추가
-        self.indexer.add(self.p_embeddings.numpy())
-        
-        print('FAISS indexer built')
-    
-    def get_dense_embedding(self):
-
-        pickle_name = f"dense_embedding.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
-
-        if os.path.isfile(emd_path):
-            with open(emd_path, "rb") as file:
-                self.p_embeddings = pickle.load(file)
-            print("Embedding pickle load.")
-        else:
-            print("Build passage embedding")
-            if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
-                self.p_encoder = AutoModelForSequenceClassification.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
-                self.q_encoder = AutoModelForSequenceClassification.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
-            else:
-                self.train()
-
-            self.p_encoder.eval()
-
-            p_embeddings = []
-            
-            batch_size = self.args.per_device_eval_batch_size
-            
-            with torch.no_grad():
-                for i in tqdm(range(0, len(self.contexts), batch_size)):
-                    batch = self.contexts[i:i+batch_size]
-                    p_seqs = self.tokenizer(batch, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
-                    p_seqs = {key: val.to(self.device) for key, val in p_seqs.items()}
-                
-                    embeddings = self.p_encoder(**p_seqs).cpu()  # Move to CPU here
-                    p_embeddings.append(embeddings)
-                    
-                    del p_seqs
-                    torch.cuda.empty_cache()
-
-            self.p_embeddings = torch.cat(p_embeddings, dim=0)
-            with open(emd_path, "wb") as file:
-                pickle.dump(self.p_embeddings, file)
-            print("Embedding pickle saved.")
-
-
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
-        
-        assert self.p_embeddings is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
-
+        # contexts_candidate -> 정답이 될 수 있는 passage 후보군
+        # 따라서 이 retriever의 고점은 sampler의 성능을 넘길 수 없다.
         if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
+            contexts_candidate = self.sampler.offer(query_or_dataset, 25)["negatives"]
+            doc_scores, doc_indices = self.get_relevant_doc(
+                query_or_dataset, contexts_candidate, k=topk
+            )
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
                 print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
-                print(self.contexts[doc_indices[i]])
+                print(contexts_candidate[doc_indices[i]])
 
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+            return (doc_scores, [contexts_candidate[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
+            contexts_candidate = self.sampler.offer_bulk(query_or_dataset, 25)["negatives"]
             total = []
             with timer("query exhaustive search"):
                 doc_scores, doc_indices = self.get_relevant_doc_bulk(
-                    query_or_dataset["question"], k=topk
+                    query_or_dataset["question"], contexts_candidate, k=topk
                 )
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="Dense retrieval: ")
@@ -267,7 +210,7 @@ class CrossDenseRetrieval:
                     "question": example["question"],
                     "id": example["id"],
                     "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
+                        [contexts_candidate[pid] for pid in doc_indices[idx]]
                     ),
                 }
                 if "context" in example.keys() and "answers" in example.keys():
@@ -278,7 +221,7 @@ class CrossDenseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas
         
-    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+    def get_relevant_doc(self, query: str, contexts: List[str], k: Optional[int] = 1) -> Tuple[List, List]:
         
         """
         Arguments:
@@ -290,25 +233,28 @@ class CrossDenseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        self.q_encoder.eval()
-        self.q_encoder.to(self.device)
-
-        self.q_encoder.eval()
-        self.q_encoder.to(self.device)
+        self.model.eval()
+        self.model.to(self.device)
+        questions = [query] * len(contexts)
 
         with torch.no_grad():
-            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
-            q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_embedding = self.q_encoder(**q_seqs).cpu()
+            tokenized = self.tokenizer(
+                questions,
+                contexts,
+                padding="max_length",
+                truncation="only_second",
+                max_length=self.max_len
+            )
+            tokenized = {key: val.to(self.device) for key, val in tokenized.items()}
+            scores = self.q_encoder(**tokenized).cpu()
 
-            sim_scores = torch.matmul(q_embedding, self.p_embeddings.transpose(0, 1)).squeeze()
-            doc_score, doc_indices = torch.topk(sim_scores, k=k)
+            doc_score, doc_indices = torch.topk(scores, k=k)
 
         torch.cuda.empty_cache()
 
         return doc_score.tolist(), doc_indices.tolist()
 
-    def get_relevant_doc_bulk(self, queries: List[str], k: Optional[int] = 1) -> Tuple[List[List[float]], List[List[int]]]:
+    def get_relevant_doc_bulk(self, queries: List[str], contexts_list: List[List[str]],  k: Optional[int] = 1) -> Tuple[List[List[float]], List[List[int]]]:
         """
         Arguments:
             queries (List[str]):
@@ -320,123 +266,48 @@ class CrossDenseRetrieval:
                 각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
         """
 
-        self.q_encoder.eval()
-        self.q_encoder.to(self.device)
+        self.model.eval()
+        self.model.to(self.device)
 
         batch_size = 16  # Adjust this value based on your memory constraints
-        q_embeddings = []
+        all_scores = []
 
         with torch.no_grad():
+            num_samples = len(contexts_list[0])
             for i in tqdm(range(0, len(queries), batch_size), desc="Dense retrieval: "):
                 batch_queries = queries[i:i+batch_size]
-                q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
-                q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-                batch_embeddings = self.q_encoder(**q_seqs).cpu()
-                q_embeddings.append(batch_embeddings)
+                batch_contexts = contexts_list[i:i+batch_size]
+                
+                full_questions = [Q for Q in batch_queries for _ in range(num_samples)]
+                full_contexts = []
+                for contexts in batch_contexts:
+                    full_contexts += contexts
+                
+                tokenized = self.tokenizer(
+                    full_questions,
+                    full_contexts,
+                    padding="max_length",
+                    truncation="only_second",
+                    max_length=self.max_len
+                )
+                tokenized = {key: val.to(self.device) for key, val in tokenized.items()}
+                scores = self.q_encoder(**tokenized).cpu()
+                all_scores.append(scores)
 
-            q_embeddings = torch.cat(q_embeddings, dim=0)
-
-            sim_scores = torch.matmul(q_embeddings, self.p_embeddings.transpose(0, 1))
-            doc_score, doc_indices = torch.topk(sim_scores, k=k, dim=1)
+            all_scores = torch.cat(scores, dim=0)
+            doc_score, doc_indices = torch.topk(all_scores, k=k, dim=1)
 
         torch.cuda.empty_cache()
 
         return doc_score.tolist(), doc_indices.tolist()
-    
-    def retrieve_faiss(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
-        assert self.indexer is not None, "build_faiss()를 먼저 수행해주세요."
-
-        if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc_faiss(query_or_dataset, k=topk)
-            print("[Search query]\n", query_or_dataset, "\n")
-
-            for i in range(topk):
-                print("Top-%d passage with score %.4f" % (i + 1, doc_scores[i]))
-                print(self.contexts[doc_indices[i]])
-
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
-
-        elif isinstance(query_or_dataset, Dataset):
-            queries = query_or_dataset["question"]
-            total = []
-
-            with timer("query faiss search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_faiss(queries, k=topk)
-            for idx, example in enumerate(tqdm(query_or_dataset, desc="Dense retrieval: ")):
-                tmp = {
-                    "question": example["question"],
-                    "id": example["id"],
-                    "context": " ".join([self.contexts[pid] for pid in doc_indices[idx]]),
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
-
-            return pd.DataFrame(total)
-
-    def get_relevant_doc_faiss(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
-
-        self.q_encoder.to(self.device)
-        self.q_encoder.eval()
-
-        with torch.no_grad():
-            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
-            q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-            q_emb = self.q_encoder(**q_seqs).cpu().numpy()
-
-        
-        with timer("query faiss search"):
-            D, I = self.indexer.search(q_emb, k)
-        
-        torch.cuda.empty_cache()
-        
-        return D.tolist()[0], I.tolist()[0]
-
-    def get_relevant_doc_bulk_faiss(self, queries: List, k: Optional[int] = 1) -> Tuple[List, List]:
-        
-        self.q_encoder.to(self.device)
-        self.q_encoder.eval()
-
-        batch_size = 16  # 메모리 제약에 따라 이 값을 조정하세요
-        D_list = []
-        I_list = []
-
-        for i in tqdm(range(0, len(queries), batch_size), desc = "Dense retrieval: "):
-            batch_queries = queries[i:i+batch_size]
-            
-            with torch.no_grad():
-                q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
-                q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
-                query_vecs = self.q_encoder(**q_seqs).cpu().numpy()
-            
-            D, I = self.indexer.search(query_vecs, k)
-            
-            D_list.extend(D.tolist())
-            I_list.extend(I.tolist())
-
-            # GPU 메모리 정리
-            torch.cuda.empty_cache()
-
-        return D_list, I_list
 
     def run(self, datasets, training_args, config):
 
         self.get_dense_embedding()
-        
-        if config.dataRetreival.faiss.use(False):
-            self.build_faiss(
-                num_clusters=config.dataRetreival.faiss.num_clusters(64)
-            )
-            df = self.retrieve_faiss(
-                datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
-            )
-        else:
-            df = self.retrieve(
-                datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
-            )
+        df = self.retrieve(
+            datasets["validation"],
+            topk=config.dataRetreival.top_k(5),
+        )
         
         if training_args.do_predict:
             f = Features(
@@ -485,33 +356,15 @@ if __name__ == "__main__":
     else:
         retriever.train()
     
-    retriever.get_dense_embedding()
-    if retriever.config.faiss.use():
-        retriever.build_faiss()
-
     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
 
-    if retriever.config.faiss.use():
+    with timer("bulk query by exhaustive search"):
+        df = retriever.retrieve(full_ds, topk=1)
+        df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
+        print(
+            "correct retrieval result by exhaustive search",
+            df["correct"].sum() / len(df),
+        )
 
-        # test single query
-        with timer("single query by faiss"):
-            scores, indices = retriever.retrieve_faiss(query)
-
-        # test bulk
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve_faiss(full_ds)
-            df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
-
-            print("correct retrieval result by faiss", df["correct"].sum() / len(df))
-
-    else:
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds, topk=1)
-            df["correct"] = df["correct"] = df.apply(lambda row: row["original_context"] in row["context"], axis=1)
-            print(
-                "correct retrieval result by exhaustive search",
-                df["correct"].sum() / len(df),
-            )
-
-        with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query, topk=1)
+    with timer("single query by exhaustive search"):
+        scores, indices = retriever.retrieve(query, topk=1)
