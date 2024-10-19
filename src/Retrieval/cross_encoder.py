@@ -19,7 +19,7 @@ from tqdm import trange
 from transformers import (
     AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 )
-from Retrieval.NegativeSampler import NegativeSampler
+from NegativeSampler import NegativeSampler
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
@@ -38,7 +38,7 @@ def timer(name):
     yield
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
-class DenseRetrieval:
+class CrossDenseRetrieval:
     def __init__(self) -> NoReturn:
 
         self.config = Config(path='./dense_encoder_config.yaml')
@@ -64,7 +64,7 @@ class DenseRetrieval:
         
         self.model_name = self.config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1).to(self.device)
 
         self.num_negatives = self.config.training.num_negative()
         self.args =TrainingArguments(
@@ -149,16 +149,15 @@ class DenseRetrieval:
                     self.model.train()
 
                     targets = torch.zeros(batch_size).long().to(self.device)
-
                     inputs = {
-                        "input_ids": batch[0].to(self.device),
-                        "attention_mask": batch[1].to(self.device),
-                        "token_type_ids": batch[2].to(self.device)
+                        "input_ids": batch[0].view(-1,self.max_len).to(self.device),
+                        "attention_mask": batch[1].view(-1,self.max_len).to(self.device),
+                        "token_type_ids": batch[2].view(-1,self.max_len).to(self.device)
                     }
 
                     outputs = self.model(**inputs)
 
-                    outputs = outputs.view(batch_size, self.num_negatives + 1)
+                    outputs = outputs.logits.view(batch_size, self.num_negatives + 1)
 
                     # 여기부터
                     sim_scores = F.log_softmax(outputs, dim=1)
@@ -467,7 +466,7 @@ class DenseRetrieval:
 
 if __name__ == "__main__":
 
-    retriever = DenseRetrieval()
+    retriever = CrossDenseRetrieval()
 
     # Test sparse
     org_dataset = load_from_disk(os.path.join(retriever.data_path, "./train_dataset"))
@@ -481,9 +480,8 @@ if __name__ == "__main__":
     print(full_ds)
 
 
-    if os.path.exists(os.path.join(retriever.data_path, "p_encoder")) and os.path.exists(os.path.join(retriever.data_path, "q_encoder")):
-        retriever.p_encoder = BertEncoder.from_pretrained(os.path.join(retriever.data_path, "p_encoder"))
-        retriever.q_encoder = BertEncoder.from_pretrained(os.path.join(retriever.data_path, "q_encoder"))
+    if os.path.exists(os.path.join(retriever.data_path, "cross_encoder")):
+        retriever.model = AutoModelForSequenceClassification.from_pretrained(os.path.join(retriever.data_path, "cross_encoder"))
     else:
         retriever.train()
     
