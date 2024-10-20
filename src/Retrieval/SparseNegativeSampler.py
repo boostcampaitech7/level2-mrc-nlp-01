@@ -53,8 +53,13 @@ class SparseNegativeSampler(NegativeSampler):
         
         # print(sample_dataset)
         filtered_dataset = sample_dataset.filter(lambda row: row['id'] in queried_ids)
+        id_indices_mapping = {row['id'] : row['sample_indices'] for row in filtered_dataset}
+        dataset = dataset.map(
+            lambda row:
+                {"indices": id_indices_mapping[row['id']][:num_negatives+1]}
+        )
         
-        return list(map(lambda indices: indices[:num_negatives+1],filtered_dataset["sample_indices"]))
+        return dataset["indices"] 
     
     def offer(self, row, num_negatives, exclude_positive=True):
         neg_indices = self.get_samples(Dataset.from_dict(row), num_negatives)[0]
