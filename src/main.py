@@ -23,6 +23,8 @@ from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedS
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
+from Retrieval.hybrid_1stage import hybrid_1stage 
+
 from dataclasses import dataclass, field
 import nltk
 
@@ -98,11 +100,11 @@ def set_hyperparameters(config, training_args):
     training_args.weight_decay = float(config.training.weight_decay())
     training_args.lr_scheduler_type  = config.training.scheduler()
     training_args.predict_with_generate  = config.training.predict_with_generate()
-    training_args.save_strategy = 'epoch',
-    training_args.evaluation_strategy = 'epoch',
-    training_args.save_total_limit = 2,
-    training_args.logging_strategy = 'epoch',
-    training_args.load_best_model_at_end = True,
+    training_args.save_strategy = 'epoch'
+    training_args.evaluation_strategy = 'epoch'
+    training_args.save_total_limit = 3
+    training_args.logging_strategy = 'epoch'
+    training_args.load_best_model_at_end = True
     training_args.remove_unused_columns = True
 
     return training_args
@@ -145,7 +147,7 @@ def main():
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
     # Sparse Retrieval
-    if config.dataRetrieval.eval(True) and training_args.do_predict:
+    if config.dataRetrieval.eval(True) and (training_args.do_predict or training_args.do_eval):
         print('*****doing eval or predict*****')
         if config.dataRetrieval.type() == "sparse":
             retriever = SparseRetrieval(
@@ -155,11 +157,36 @@ def main():
             )
         elif config.dataRetrieval.type() == "dense":
             retriever = DenseRetrieval()
+        elif config.dataRetrieval.type() == "hybrid1":
+            sparse_retriever = SparseRetrieval(
+                tokenize_fn=tokenizer.tokenize,
+                context_path=config.dataRetrieval.context_path(),
+                testing=is_testing,
+            )
+            dense_retriever = DenseRetrieval()
+            retriever = hybrid_1stage(
+                sparse_retriever=sparse_retriever,
+                dense_retriever=dense_retriever,
+                ratio=config.dataRetrieval.hybrid_ratio(0.5),
+                context_path=config.dataRetrieval.context_path(),
+            )
+        
+        # Hybrid retrieval 테스트
+        if config.dataRetrieval.type() == "hybrid1":
+            print(f"Testing hybrid retrieval with ratio: {config.dataRetrieval.hybrid_ratio(0.5)}")
+            for ratio in [0.3, 0.5, 0.7]:
+                retriever.ratio = ratio
+                print(f"\nTesting with ratio: {ratio}")
+                test_query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
+                results = retriever.retrieve(test_query, topk=5)
+                print(f"Results: {results}")
+        
         datasets = retriever.run(datasets, training_args, config)
 
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
     if not (training_args.do_train or training_args.do_eval or training_args.do_predict):
         return logger.info('Neither training, evaluation, nor prediction is enabled.')
+
 
     # Prepare tokenizer and dataset
     
@@ -259,8 +286,7 @@ def main():
     # Training
     if training_args.do_train:
         logger.info("*** Training ***")
-        checkpoint = last_checkpoint or (config.model.name() if os.path.isdir(config.model.name()) else None)
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        train_result = trainer.train()  # resume_from_checkpoint 옵션 제거
         trainer.save_model()
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)

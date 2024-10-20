@@ -32,8 +32,10 @@ class SparseRetrieval:
         self,
         tokenize_fn,
         context_path: Optional[str] = "wikipedia_documents.json",
-        testing: bool = False
+        testing: bool = False,
+        
     ) -> NoReturn:
+        self.bm25=None
 
         """
         Arguments:
@@ -246,23 +248,6 @@ class SparseRetrieval:
 
             cqas = pd.DataFrame(total)
             return cqas
-    
-    def get_relevant_doc(
-        self, query: str, k: Optional[int] = 1
-        ) -> Tuple[List, List]:
-        """
-        Arguments:
-            query (str):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        """
-        tokenized_query = self.tokenize_fn(query)
-        scores = self.bm25.get_scores(tokenized_query)
-        sorted_result = np.argsort(scores)[::-1]
-
-        doc_scores, doc_indices = scores[sorted_result][:k].tolist(), sorted_result[:k].tolist()
-        return doc_scores, doc_indices
 
     def get_relevant_doc_bulk(
         self, queries: List, k: Optional[int] = 1
@@ -450,6 +435,13 @@ class SparseRetrieval:
         
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
+    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+        tokenized_query = self.tokenize_fn(query)
+        scores = self.bm25.get_scores(tokenized_query)
+        sorted_result = np.argsort(scores)[::-1]
+        doc_scores = scores[sorted_result][:k].tolist()
+        doc_indices = sorted_result[:k].tolist()
+        return doc_scores, doc_indices
 
 
 if __name__ == "__main__":
