@@ -31,7 +31,7 @@ class SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        context_path: Optional[str] = "wikipedia_documents.json",
+        context_path: Optional[str] = "./data/wikipedia_documents.json",
         testing: bool = False
     ) -> NoReturn:
 
