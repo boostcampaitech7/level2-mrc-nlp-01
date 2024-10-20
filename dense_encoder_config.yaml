@@ -17,5 +17,6 @@ training:
   learning_rate: 2e-5
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
-  num_negative: 2
+  gradient_accumulation_steps: 8
+  num_negative: 8
   weight_decay: 0.01

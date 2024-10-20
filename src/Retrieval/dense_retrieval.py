@@ -13,6 +13,7 @@ import random
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from torch.cuda.amp import GradScaler ,autocast
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
@@ -132,6 +133,7 @@ class DenseRetrieval:
             num_train_epochs=self.config.training.epochs(),
             weight_decay=self.config.training.weight_decay(),
             )
+        self.grad_scaler = GradScaler()
         self.indexer = None
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
@@ -223,44 +225,44 @@ class DenseRetrieval:
 
                     targets = torch.zeros(batch_size).long().to(self.device)
 
-                    q_inputs = {
-                        "input_ids": batch[0].to(self.device),
-                        "attention_mask": batch[1].to(self.device),
-                    }
-                    if len(batch) > 4:  # If token_type_ids are present
-                        q_inputs["token_type_ids"] = batch[2].to(self.device)
-                        p_inputs = {
-                            "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                            "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                            "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                    with autocast():
+                        q_inputs = {
+                            "input_ids": batch[0].to(self.device),
+                            "attention_mask": batch[1].to(self.device),
                         }
-                    else:
-                        p_inputs = {
-                            "input_ids": batch[2].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                            "attention_mask": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        }
+                        if len(batch) > 4:  # If token_type_ids are present
+                            q_inputs["token_type_ids"] = batch[2].to(self.device)
+                            p_inputs = {
+                                "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                            }
+                        else:
+                            p_inputs = {
+                                "input_ids": batch[2].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                            }
 
-                    q_outputs = self.q_encoder(**q_inputs)
-                    p_outputs = self.p_encoder(**p_inputs)
+                        q_outputs = self.q_encoder(**q_inputs)
+                        p_outputs = self.p_encoder(**p_inputs)
 
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-                    p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
+                        q_outputs = q_outputs.view(batch_size, 1, -1)
+                        p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
 
-                    sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
-                
-                    loss = F.nll_loss(sim_scores, targets)
+                        sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
+                        sim_scores = sim_scores.view(batch_size, -1)
+                        sim_scores = F.log_softmax(sim_scores, dim=1)
                     
+                        loss = F.nll_loss(sim_scores, targets)
+                    
+                    self.grad_scaler.scale(loss).backward()
+
                     tepoch.set_postfix(loss=f"{str(loss.item())}", step=f"{global_step+1}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
-
-                    loss.backward()
-                    optimizer.step()
+                    
+                    self.grad_scaler.step(optimizer)
+                    self.grad_scaler.update()
+                    optimizer.zero_grad()
                     scheduler.step()
-
-                    self.q_encoder.zero_grad()
-                    self.p_encoder.zero_grad()
-
                     global_step += 1
 
                     torch.cuda.empty_cache()
