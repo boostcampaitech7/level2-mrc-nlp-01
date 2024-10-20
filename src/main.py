@@ -225,12 +225,15 @@ def main():
                 )
     
     # Data collator
-    # data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
-    data_collator = DataCollatorForSeq2Seq(
-            wrapped_tokenizer.tokenizer,
-            model=model,
-            pad_to_multiple_of=8 if training_args.fp16 else None
-        )
+    # Generation 여부에 따라 Data collator 선택
+    if config.training.predict_with_generate():
+        data_collator = DataCollatorForSeq2Seq(
+                wrapped_tokenizer.tokenizer,
+                model=model,
+                pad_to_multiple_of=8 if training_args.fp16 else None
+            )
+    else:
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 
     # Metric for evaluation
     metric = load_metric("squad")
