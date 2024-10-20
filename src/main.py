@@ -179,7 +179,12 @@ def main():
                 print(f"\nTesting with ratio: {ratio}")
                 test_query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
                 results = retriever.retrieve(test_query, topk=5)
-                print(f"Results: {results}")
+                if isinstance(results, tuple) and len(results) == 2:
+                    scores, contexts = results
+                    print(f"Top-1 passage with score {scores[0]:.6f}")
+                    print(contexts[0])
+                else:
+                    print("Unexpected return value from retrieve method")
         
         datasets = retriever.run(datasets, training_args, config)
 

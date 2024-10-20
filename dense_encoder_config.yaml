@@ -8,12 +8,12 @@ dataset:
 seed: 42
 
 faiss:
-  use: False
+  use: True
   num_clusters: 64
 
 training:
   output_dir: dense_output
-  epochs: 5
+  epochs: 3
   learning_rate: 2e-5
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2

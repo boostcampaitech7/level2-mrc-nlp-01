@@ -15,12 +15,11 @@ training:
   predict_with_generate: False # If you want to generate, set True
 
 dataRetrieval:
-  type: sparse
+  type: hybrid1
   eval: True
-  data_path: "/data/ephemeral/home/ksw/level2-mrc-nlp-01/data"
-  context_path: "wikipedia_documents.json"
+  context_path: ./data/wikipedia_documents.json
   top_k: 10
-  hybrid_ratio: 0.5
+  hybrid_ratio: 0.7
   faiss:
     use: False
     num_clusters: 64
