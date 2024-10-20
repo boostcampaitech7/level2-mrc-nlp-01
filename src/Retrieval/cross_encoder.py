@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import random
 import torch
+import hashlib
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
@@ -20,11 +21,21 @@ from transformers import (
     AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 )
 from NegativeSampler import NegativeSampler
+from SparseNegativeSampler import SparseNegativeSampler
+from sparse_retrieval import SparseRetrieval
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 
-
+def dummy_row(question):
+    hashed = hashlib.sha256()
+    hashed.update(question.encode())
+    return {
+        "question": [question],
+        "context": [""],
+        "id": [hashed.hexdigest()]
+    }
+    
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -65,8 +76,10 @@ class CrossDenseRetrieval:
         self.model_name = self.config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1).to(self.device)
-        self.sampler = NegativeSampler(self.contexts)
-
+        self.sampler = SparseNegativeSampler(self.contexts)
+        sparse_retriever = SparseRetrieval(self.tokenizer.tokenize)
+        self.sampler.make_sparse_embedding(sparse_retriever)
+        
         self.num_negatives = self.config.training.num_negative()
         self.args =TrainingArguments(
             output_dir=self.config.training.output_dir(),
@@ -184,7 +197,8 @@ class CrossDenseRetrieval:
         # contexts_candidate -> 정답이 될 수 있는 passage 후보군
         # 따라서 이 retriever의 고점은 sampler의 성능을 넘길 수 없다.
         if isinstance(query_or_dataset, str):
-            contexts_candidate = self.sampler.offer(query_or_dataset, 25)["negatives"]
+            contexts_candidate = self.sampler.offer(dummy_row(query_or_dataset), 
+                                                    25, exclude_positive=False)["negatives"]
             doc_scores, doc_indices = self.get_relevant_doc(
                 query_or_dataset, contexts_candidate, k=topk
             )
@@ -197,7 +211,7 @@ class CrossDenseRetrieval:
             return (doc_scores, [contexts_candidate[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
-            contexts_candidate = self.sampler.offer_bulk(query_or_dataset, 25)["negatives"]
+            contexts_candidate = self.sampler.offer_bulk(query_or_dataset, 25, exclude_positive=False)["negatives"]
             total = []
             with timer("query exhaustive search"):
                 doc_scores, doc_indices = self.get_relevant_doc_bulk(
@@ -210,7 +224,7 @@ class CrossDenseRetrieval:
                     "question": example["question"],
                     "id": example["id"],
                     "context": " ".join(
-                        [contexts_candidate[pid] for pid in doc_indices[idx]]
+                        [contexts_candidate[idx][pid] for pid in doc_indices[idx]]
                     ),
                 }
                 if "context" in example.keys() and "answers" in example.keys():
@@ -240,16 +254,15 @@ class CrossDenseRetrieval:
         with torch.no_grad():
             tokenized = self.tokenizer(
                 questions,
-                contexts,
+                contexts.tolist(),
                 padding="max_length",
                 truncation="only_second",
                 max_length=self.max_len
             )
-            tokenized = {key: val.to(self.device) for key, val in tokenized.items()}
-            scores = self.q_encoder(**tokenized).cpu()
-
+            tokenized = {key: torch.tensor(val).to(self.device) for key, val in tokenized.items()}
+            scores = self.model(**tokenized).logits.cpu()
+            scores = scores.view(-1)
             doc_score, doc_indices = torch.topk(scores, k=k)
-
         torch.cuda.empty_cache()
 
         return doc_score.tolist(), doc_indices.tolist()
@@ -281,7 +294,7 @@ class CrossDenseRetrieval:
                 full_questions = [Q for Q in batch_queries for _ in range(num_samples)]
                 full_contexts = []
                 for contexts in batch_contexts:
-                    full_contexts += contexts
+                    full_contexts += contexts.tolist()
                 
                 tokenized = self.tokenizer(
                     full_questions,
@@ -290,11 +303,11 @@ class CrossDenseRetrieval:
                     truncation="only_second",
                     max_length=self.max_len
                 )
-                tokenized = {key: val.to(self.device) for key, val in tokenized.items()}
-                scores = self.q_encoder(**tokenized).cpu()
+                tokenized = {key: torch.tensor(val).to(self.device) for key, val in tokenized.items()}
+                scores = self.model(**tokenized).logits.cpu().view(-1, num_samples)
                 all_scores.append(scores)
 
-            all_scores = torch.cat(scores, dim=0)
+            all_scores = torch.cat(all_scores, dim=0)
             doc_score, doc_indices = torch.topk(all_scores, k=k, dim=1)
 
         torch.cuda.empty_cache()
