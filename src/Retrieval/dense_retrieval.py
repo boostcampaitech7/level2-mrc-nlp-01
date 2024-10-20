@@ -261,8 +261,8 @@ class DenseRetrieval:
                     
                     self.grad_scaler.step(optimizer)
                     self.grad_scaler.update()
-                    optimizer.zero_grad()
                     scheduler.step()
+                    optimizer.zero_grad()
                     global_step += 1
 
                     torch.cuda.empty_cache()
