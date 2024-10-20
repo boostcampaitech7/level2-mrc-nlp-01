@@ -304,8 +304,12 @@ class DenseRetrieval:
         else:
             print("Build passage embedding")
             if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
-                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
-                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+                    self.p_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                else:
+                    self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
             else:
                 self.train()
 
