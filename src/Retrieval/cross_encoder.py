@@ -24,9 +24,6 @@ from NegativeSampler import NegativeSampler
 from SparseNegativeSampler import SparseNegativeSampler
 from sparse_retrieval import SparseRetrieval
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import Config
-
 def dummy_row(question):
     hashed = hashlib.sha256()
     hashed.update(question.encode())
@@ -50,14 +47,11 @@ def timer(name):
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 class CrossDenseRetrieval:
-    def __init__(self) -> NoReturn:
+    def __init__(self, config) -> NoReturn:
+        set_seed(config.seed())
 
-        self.config = Config(path='./dense_encoder_config.yaml')
-
-        set_seed(self.config.seed())
-
-        data_path = os.path.dirname(self.config.dataset.train_path())
-        context_path = self.config.dataset.context_path()
+        data_path = os.path.dirname(config.dataset.train_path())
+        context_path = config.dataset.context_path()
 
         self.data_path = data_path
         with open(context_path, "r", encoding="utf-8") as f:
@@ -73,21 +67,21 @@ class CrossDenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.max_len = 512
         
-        self.model_name = self.config.model.name()
+        self.model_name = config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1).to(self.device)
         self.sampler = SparseNegativeSampler(self.contexts)
         sparse_retriever = SparseRetrieval(self.tokenizer.tokenize)
         self.sampler.make_sparse_embedding(sparse_retriever)
         
-        self.num_negatives = self.config.training.num_negative()
+        self.num_negatives = config.training.num_negative()
         self.args =TrainingArguments(
-            output_dir=self.config.training.output_dir(),
-            learning_rate=float(self.config.training.learning_rate()),
-            per_device_train_batch_size=self.config.training.per_device_train_batch_size(),
-            per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
-            num_train_epochs=self.config.training.epochs(),
-            weight_decay=self.config.training.weight_decay(),
+            output_dir=config.training.output_dir(),
+            learning_rate=float(config.training.learning_rate()),
+            per_device_train_batch_size=config.training.per_device_train_batch_size(),
+            per_device_eval_batch_size=config.training.per_device_eval_batch_size(),
+            num_train_epochs=config.training.epochs(),
+            weight_decay=config.training.weight_decay(),
             )
         self.indexer = None
 
