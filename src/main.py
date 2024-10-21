@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import random
 import logging
 import numpy as np
@@ -37,8 +38,10 @@ def set_all_seed(seed, deterministic=False):
         torch.backends.cudnn.benchmark = False
 
 @dataclass
-class DataArguments:
-    testing: bool = field(default=False, metadata={"help": "Use only 1% of the dataset for testing"})
+class ModuleArguments:
+    do_mrc: bool = field(default=False, metadata={"help": "Whether to train/evaluate/predict MRC model"})
+    do_retrieval: bool = field(default=False, metadata={"help": "Whether to train/evaluate/predict retrieval model"})
+    do_both: bool = field(default=False, metadata={"help": "Whether to train/evaluate/predict both models"})
 
 @dataclass
 class DataArguments:
@@ -107,29 +110,24 @@ def set_hyperparameters(config, training_args):
 
     return training_args
 
-def main():
-    config = Config()
-    logger = configure_logging()
-    
-    nltk.download('punkt')
-    nltk.download('punkt_tab')
-    
-    # Argument parsing
-    parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
-    training_args, data_args = parser.parse_args_into_dataclasses()
-    training_args.output_dir = use_proper_output_dir(config, training_args)
-    training_args = set_hyperparameters(config, training_args)
-    is_testing = True if data_args.testing else config.testing(False)
-    training_args.output_dir = use_proper_output_dir(config, training_args)
-    training_args = set_hyperparameters(config, training_args)
-    is_testing = True if data_args.testing else config.testing(False)
-    set_all_seed(config.seed())
+def use_dense_retrieval():
+    #TODO: is_testing이 적용되도록
+    config = Config(path="./dense_encoder_config.yaml")
+    return DenseRetrieval(config)
 
-    logger.info("Training/evaluation parameters %s", training_args)
+def use_retriever_datasets(config, tokenizer, datasets, training_args, is_testing):
+    print('*****doing eval or predict*****')
+    if config.dataRetrieval.type() == "sparse":
+        retriever = SparseRetrieval(
+            tokenize_fn=tokenizer.tokenize,
+            context_path=config.dataRetrieval.context_path(),
+            testing=is_testing,
+        )
+    elif config.dataRetrieval.type() == "dense":
+        retriever = use_dense_retrieval() 
+    datasets = retriever.run(datasets, training_args, config)
 
-    # 상황에 맞는 모델 이름과 데이터 경로 설정
-    print('output_dir', training_args.output_dir)
-
+def do_mrc(config, training_args, module_args, logger, is_testing):
     datasets = use_proper_datasets(config, training_args)
     if is_testing:
         datasets = use_small_datasets(datasets)
@@ -143,19 +141,6 @@ def main():
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
     else:
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
-    
-    # Sparse Retrieval
-    if config.dataRetrieval.eval(True) and training_args.do_predict:
-        print('*****doing eval or predict*****')
-        if config.dataRetrieval.type() == "sparse":
-            retriever = SparseRetrieval(
-                tokenize_fn=tokenizer.tokenize,
-                context_path=config.dataRetrieval.context_path(),
-                testing=is_testing,
-            )
-        elif config.dataRetrieval.type() == "dense":
-            retriever = DenseRetrieval()
-        datasets = retriever.run(datasets, training_args, config)
 
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
     if not (training_args.do_train or training_args.do_eval or training_args.do_predict):
@@ -166,20 +151,15 @@ def main():
     if training_args.do_predict:
         _, max_seq_length = check_no_error(config, training_args, datasets, tokenizer)
         config.dataQA.tokenizer.max_seq_length.atom = max_seq_length
-        # Generation 여부에 따라 tokenizer 선택
-        if config.training.predict_with_generate():
-            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
-        else:
-            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
-        
     else:
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
-        # Generation 여부에 따라 tokenizer 선택
-        if config.training.predict_with_generate():
-            wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
-        else:
-            wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
         column_names = datasets["train"].column_names if training_args.do_train else datasets["validation"].column_names
+    
+    # Generation 여부에 따라 tokenizer 선택
+    if config.training.predict_with_generate():
+        wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
+    else:
+        wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
     
     train_dataset, eval_dataset = None, None
     if training_args.do_train:
@@ -199,30 +179,34 @@ def main():
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
             )
-    elif training_args.do_eval:
-        eval_dataset = datasets["validation"]
-        eval_dataset = eval_dataset.map(
-            wrapped_tokenizer.encode_valid,
-            batched=True,
-            remove_columns=column_names,
-            num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
-            load_from_cache_file=not config.dataQA.overwrite_cache(False)
-            )
     else:
-        eval_dataset = datasets["validation"]
-        # Generation 여부에 따라 encoding method 선택
-        if config.training.predict_with_generate():
-            eval_dataset = eval_dataset.map(
-                wrapped_tokenizer.encode_test,
-                batched=True,
-                remove_columns=eval_dataset.column_names,
-                )
-        else:
+        if module_args.do_retrieval: # retrieval도 같이 수행하도록 설정한 경우
+            # 원래의 context가 아닌 retirever가 찾은 context를 dataset에 넣어서 사용한다.
+            datasets = use_retriever_datasets(config, tokenizer, datasets, training_args, is_testing)
+        if training_args.do_eval:
+            eval_dataset = datasets["validation"]
             eval_dataset = eval_dataset.map(
                 wrapped_tokenizer.encode_valid,
                 batched=True,
-                remove_columns=eval_dataset.column_names,
+                remove_columns=column_names,
+                num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
+                load_from_cache_file=not config.dataQA.overwrite_cache(False)
                 )
+        elif training_args.do_predict:
+            eval_dataset = datasets["validation"]
+            # Generation 여부에 따라 encoding method 선택
+            if config.training.predict_with_generate():
+                eval_dataset = eval_dataset.map(
+                    wrapped_tokenizer.encode_test,
+                    batched=True,
+                    remove_columns=eval_dataset.column_names,
+                    )
+            else:
+                eval_dataset = eval_dataset.map(
+                    wrapped_tokenizer.encode_valid,
+                    batched=True,
+                    remove_columns=eval_dataset.column_names,
+                    )
     
     # Data collator
     # Generation 여부에 따라 Data collator 선택
@@ -290,6 +274,102 @@ def main():
         metrics["eval_samples"] = len(eval_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+def do_retrieval(config, training_args, logger, is_testing):
+    if config.dataRetrieval.type() == "dense":
+        retriever = use_dense_retrieval()
+    elif config.dataRetrieval.type() == "sparse":
+        retriever = SparseRetrieval(
+            tokenize_fn=AutoTokenizer.from_pretrained(config.model.name()).tokenize,
+            context_path=config.dataRetrieval.context_path(),
+            testing=is_testing,
+        )
+    if training_args.do_train:
+        retriever.train()
+    
+    elif training_args.do_eval:
+        datasets = load_from_disk(config.dataQA.path.train('./data/train_dataset'))
+        if is_testing:
+            datasets = use_small_datasets(datasets)
+        validation_dataset = datasets["validation"]
+        # TODO: faiss에 대한 설정 필요
+        k = config.dataRetrieval.top_k(5)
+        df = retriever.retrieve(validation_dataset, 
+                                topk=k,
+                                concat_context=False)
+        rankings = []
+        for row in df:
+            in_k = False
+            for rank, context in enumerate(row["context"]):
+                if row["original_context"] == context:
+                    in_k = True
+                    rankings.append(rank+1)
+                    break
+            if not in_k:
+                rankings.append(k+1)
+
+        def recall_at_k(k):
+            return sum([1 for rank in rankings if rank <= k]) / len(rankings)
+        
+        recalls = {f"recall@{i}": recall_at_k(i) for i in range(1, k+1)}
+        with open(config.output.train('./outputs/train_dataset'), 'w') as f:
+            json.dump(recalls, f, indent=4)
+            
+        print(f"Recall@{k} : {recalls[f'recall@{k}']}")
+    
+    elif training_args.do_predict:
+        datasets = load_from_disk(config.dataQA.path.test('./data/test_dataset'))
+        if is_testing:
+            datasets = use_small_datasets(datasets)
+        datasets = retriever.run(datasets, training_args, config)
+        validation_dataset = datasets["validation"]
+        
+        contexts = {row["id"]: row["context"] for row in validation_dataset}
+        with open(config.output.test('./outputs/test_dataset'), 'w') as f:
+            json.dump(contexts, f, indent=4)
+        print("Retrieval results are saved in", config.output.test('./outputs/test_dataset'))
+        
+def main():
+    config = Config()
+    logger = configure_logging()
+    
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
+    
+    # Argument parsing
+    parser = HfArgumentParser((CustomTrainingArguments, DataArguments, ModuleArguments))
+    training_args, data_args, module_args = parser.parse_args_into_dataclasses()
+    training_args.output_dir = use_proper_output_dir(config, training_args)
+    training_args = set_hyperparameters(config, training_args)
+    is_testing = True if data_args.testing else config.testing(False)
+    set_all_seed(config.seed())
+
+    if not (module_args.do_mrc or module_args.do_retrieval or module_args.do_both): 
+        module_args.do_mrc = True
+    
+    if training_args.do_predict:
+        module_args.do_retrieval = True # test dataset에는 context가 존재하지 않는다. 강제로 retrieval을 수행하도록 함
+    
+    if module_args.do_both:
+        module_args.do_mrc = True
+        module_args.do_retrieval = True
+
+    if training_args.do_train and (module_args.do_mrc and module_args.do_retrieval):
+        # MRC와 retrieval를 동시에 학습하는 것을 지양한다.
+        # MRC와 retrieval을 각각 학습하도록 요청한다.
+        return logger.info('Both MRC and retrieval training is not allowed. Please train them separately.')
+    
+    logger.info("Training/evaluation parameters %s", training_args)
+
+    # 상황에 맞는 모델 이름과 데이터 경로 설정
+    print('output_dir', training_args.output_dir)
+
+    if module_args.do_mrc:
+        # mrc만 수행하거나 mrc와 retrieval을 동시에 수행하는 경우
+        do_mrc(config, training_args, module_args, logger, is_testing)
+    elif module_args.do_retrieval:
+        # retrieval만 수행하는 경우
+        do_retrieval(config, training_args, logger, is_testing)
 
 if __name__ == "__main__":
     main()
