@@ -6,7 +6,6 @@ import time
 from contextlib import contextmanager
 from typing import List, NoReturn, Optional, Tuple, Union
 
-import faiss
 import numpy as np
 import pandas as pd
 import random

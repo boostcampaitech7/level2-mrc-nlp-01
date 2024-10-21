@@ -42,6 +42,12 @@ def set_all_seed(seed, deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+# secrets.yaml 읽기 전용
+def load_config(config_path):
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
 @dataclass
 class ModuleArguments:
     do_mrc: bool = field(default=False, metadata={"help": "Whether to train/evaluate/predict MRC model"})
@@ -149,6 +155,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
     else:
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
 
+    wandb.watch(model)
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
     if not (training_args.do_train or training_args.do_eval or training_args.do_predict):
         return logger.info('Neither training, evaluation, nor prediction is enabled.')
@@ -357,7 +364,6 @@ def main():
     wandb.init(project="MRC_project", config=config, name=run_name)
     
     # Start wandb monitoring the model and parameters
-    wandb.watch(model)
     
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments, ModuleArguments))
