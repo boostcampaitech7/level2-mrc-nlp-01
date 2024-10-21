@@ -438,6 +438,8 @@ class SparseRetrieval:
                     "question": Value(dtype="string", id=None),
                 }
             )
+        
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         elif training_args.do_eval:
             f = Features(
                 {
@@ -453,7 +455,7 @@ class SparseRetrieval:
                 }
             )
         
-        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
         return datasets
 
 

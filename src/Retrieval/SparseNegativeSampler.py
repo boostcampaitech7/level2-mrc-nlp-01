@@ -4,7 +4,7 @@ import numpy as np
 from datasets import Dataset, concatenate_datasets
 from tqdm.auto import tqdm
 
-from NegativeSampler import NegativeSampler
+from Retrieval.NegativeSampler import NegativeSampler
 
 class SparseNegativeSampler(NegativeSampler):
     def __init__(self, corpus, data_path="data"):

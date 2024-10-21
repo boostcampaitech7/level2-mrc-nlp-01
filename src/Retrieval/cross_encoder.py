@@ -20,9 +20,9 @@ from tqdm import trange
 from transformers import (
     AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 )
-from NegativeSampler import NegativeSampler
-from SparseNegativeSampler import SparseNegativeSampler
-from sparse_retrieval import SparseRetrieval
+# from NegativeSampler import NegativeSampler
+from Retrieval.SparseNegativeSampler import SparseNegativeSampler
+from Retrieval.sparse_retrieval import SparseRetrieval
 
 def dummy_row(question):
     hashed = hashlib.sha256()
@@ -321,7 +321,6 @@ class CrossDenseRetrieval:
             topk=config.dataRetreival.top_k(5),
             do_predict = training_args.do_predict
         )
-        
         if training_args.do_predict:
             f = Features(
                 {
@@ -330,6 +329,7 @@ class CrossDenseRetrieval:
                     "question": Value(dtype="string", id=None),
                 }
             )
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         elif training_args.do_eval:
             f = Features(
                 {
@@ -345,7 +345,7 @@ class CrossDenseRetrieval:
                 }
             )
         
-        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
         return datasets
 
 if __name__ == "__main__":
