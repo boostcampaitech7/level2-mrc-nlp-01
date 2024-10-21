@@ -24,6 +24,7 @@ from QuestionAnswering.trainer import QuestionAnsweringTrainer, GenerationBasedS
 from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrapper, Seq2SeqLMTokenizerWrapper
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
+from Retrieval.cross_encoder import CrossDenseRetrieval
 from dataclasses import dataclass, field
 import nltk
 
@@ -113,7 +114,7 @@ def set_hyperparameters(config, training_args):
 def use_dense_retrieval():
     #TODO: is_testing이 적용되도록
     config = Config(path="./dense_encoder_config.yaml")
-    return DenseRetrieval(config)
+    return CrossDenseRetrieval(config)
 
 def use_retriever_datasets(config, tokenizer, datasets, training_args, is_testing):
     print('*****doing eval or predict*****')
@@ -126,6 +127,7 @@ def use_retriever_datasets(config, tokenizer, datasets, training_args, is_testin
     elif config.dataRetrieval.type() == "dense":
         retriever = use_dense_retrieval() 
     datasets = retriever.run(datasets, training_args, config)
+    return datasets
 
 def do_mrc(config, training_args, module_args, logger, is_testing):
     datasets = use_proper_datasets(config, training_args)
@@ -183,6 +185,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
         if module_args.do_retrieval: # retrieval도 같이 수행하도록 설정한 경우
             # 원래의 context가 아닌 retirever가 찾은 context를 dataset에 넣어서 사용한다.
             datasets = use_retriever_datasets(config, tokenizer, datasets, training_args, is_testing)
+            column_names = datasets["validation"].column_names
         if training_args.do_eval:
             eval_dataset = datasets["validation"]
             eval_dataset = eval_dataset.map(
@@ -298,7 +301,7 @@ def do_retrieval(config, training_args, logger, is_testing):
                                 topk=k,
                                 concat_context=False)
         rankings = []
-        for row in df:
+        for _, row in df.iterrows():
             in_k = False
             for rank, context in enumerate(row["context"]):
                 if row["original_context"] == context:
@@ -312,7 +315,8 @@ def do_retrieval(config, training_args, logger, is_testing):
             return sum([1 for rank in rankings if rank <= k]) / len(rankings)
         
         recalls = {f"recall@{i}": recall_at_k(i) for i in range(1, k+1)}
-        with open(config.output.train('./outputs/train_dataset'), 'w') as f:
+        output_path = config.output.train('./outputs/train_dataset')
+        with open(os.path.join(output_path, 'recalls.json'), 'w') as f:
             json.dump(recalls, f, indent=4)
             
         print(f"Recall@{k} : {recalls[f'recall@{k}']}")
@@ -325,7 +329,8 @@ def do_retrieval(config, training_args, logger, is_testing):
         validation_dataset = datasets["validation"]
         
         contexts = {row["id"]: row["context"] for row in validation_dataset}
-        with open(config.output.test('./outputs/test_dataset'), 'w') as f:
+        output_path = config.output.test('./outputs/test_dataset')
+        with open(os.path.join(output_path, "contexts.json"), 'w') as f:
             json.dump(contexts, f, indent=4)
         print("Retrieval results are saved in", config.output.test('./outputs/test_dataset'))
         
