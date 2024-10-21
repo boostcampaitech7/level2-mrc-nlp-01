@@ -145,7 +145,7 @@ def main():
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
     # Sparse Retrieval
-    if config.dataRetrieval.eval(True) and training_args.do_predict:
+    if config.dataRetrieval.eval(True) and (training_args.do_predict or training_args.do_eval) and not training_args.reader_only:
         print('*****doing eval or predict*****')
         if config.dataRetrieval.type() == "sparse":
             retriever = SparseRetrieval(
