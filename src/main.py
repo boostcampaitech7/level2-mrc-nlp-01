@@ -25,6 +25,11 @@ from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
 import nltk
+import wandb
+import yaml
+from datetime import datetime
+import pytz
+
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -101,11 +106,19 @@ def set_hyperparameters(config, training_args):
     training_args.save_strategy = 'epoch'
     training_args.evaluation_strategy = 'epoch'
     training_args.save_total_limit = 2
-    training_args.logging_strategy = 'epoch'
+    training_args.logging_strategy = 'steps'
+    training_args.logging_steps = config.training.logging_steps(10) # Config.yaml에서 조절가능
     training_args.load_best_model_at_end = True
     training_args.remove_unused_columns = True
 
     return training_args
+
+# secrets.yaml 읽기 전용
+def load_config(config_path):
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
 
 def main():
     config = Config()
@@ -113,13 +126,23 @@ def main():
     
     nltk.download('punkt')
     nltk.download('punkt_tab')
+
+    secrets = load_config(config_path="secrets.yaml")
+    wandb.login(key=secrets["wandb-api-key"])
+    
+    model_name = config.model.name
+    tz = pytz.timezone('Asia/Seoul')
+    start_time = datetime.now(tz).strftime("%Y%m%d_%H%M%S")
+    run_name = f"{model_name}_{start_time}"
+
+    wandb.init(project="MRC_project", config=config, name=run_name)
+    
+    
     
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments))
     training_args, data_args = parser.parse_args_into_dataclasses()
-    training_args.output_dir = use_proper_output_dir(config, training_args)
-    training_args = set_hyperparameters(config, training_args)
-    is_testing = True if data_args.testing else config.testing(False)
+    
     training_args.output_dir = use_proper_output_dir(config, training_args)
     training_args = set_hyperparameters(config, training_args)
     is_testing = True if data_args.testing else config.testing(False)
@@ -128,8 +151,6 @@ def main():
     logger.info("Training/evaluation parameters %s", training_args)
 
     # 상황에 맞는 모델 이름과 데이터 경로 설정
-    print('output_dir', training_args.output_dir)
-
     datasets = use_proper_datasets(config, training_args)
     if is_testing:
         datasets = use_small_datasets(datasets)
@@ -138,12 +159,16 @@ def main():
     model_name = use_proper_model(config, training_args)
     config_hf = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    
     # Generation 여부에 따라 모델 선택
     if config.training.predict_with_generate():
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
     else:
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
-    
+
+    # Start wandb monitoring the model and parameters
+    wandb.watch(model)
+
     # Sparse Retrieval
     if config.dataRetrieval.eval(True) and training_args.do_predict:
         print('*****doing eval or predict*****')
@@ -166,7 +191,6 @@ def main():
     if training_args.do_predict:
         _, max_seq_length = check_no_error(config, training_args, datasets, tokenizer)
         config.dataQA.tokenizer.max_seq_length.atom = max_seq_length
-        # Generation 여부에 따라 tokenizer 선택
         if config.training.predict_with_generate():
             wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
         else:
@@ -174,7 +198,6 @@ def main():
         
     else:
         last_checkpoint, _ = check_no_error(config, training_args, datasets, tokenizer)
-        # Generation 여부에 따라 tokenizer 선택
         if config.training.predict_with_generate():
             wrapped_tokenizer = Seq2SeqLMTokenizerWrapper(tokenizer, config)
         else:
@@ -191,14 +214,14 @@ def main():
             remove_columns=column_names,
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
-            )
+        )
         eval_dataset = eval_dataset.map(
             wrapped_tokenizer.encode_valid,
             batched=True,
             remove_columns=column_names,
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
-            )
+        )
     elif training_args.do_eval:
         eval_dataset = datasets["validation"]
         eval_dataset = eval_dataset.map(
@@ -207,31 +230,29 @@ def main():
             remove_columns=column_names,
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
             load_from_cache_file=not config.dataQA.overwrite_cache(False)
-            )
+        )
     else:
         eval_dataset = datasets["validation"]
-        # Generation 여부에 따라 encoding method 선택
         if config.training.predict_with_generate():
             eval_dataset = eval_dataset.map(
                 wrapped_tokenizer.encode_test,
                 batched=True,
                 remove_columns=eval_dataset.column_names,
-                )
+            )
         else:
             eval_dataset = eval_dataset.map(
                 wrapped_tokenizer.encode_valid,
                 batched=True,
                 remove_columns=eval_dataset.column_names,
-                )
+            )
     
     # Data collator
-    # Generation 여부에 따라 Data collator 선택
     if config.training.predict_with_generate():
         data_collator = DataCollatorForSeq2Seq(
-                wrapped_tokenizer.tokenizer,
-                model=model,
-                pad_to_multiple_of=8 if training_args.fp16 else None
-            )
+            wrapped_tokenizer.tokenizer,
+            model=model,
+            pad_to_multiple_of=8 if training_args.fp16 else None
+        )
     else:
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 
@@ -241,7 +262,6 @@ def main():
         return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
     
     # Trainer for training, evaluation, and prediction
-    # Generation 여부에 따라 Trainer 선택
     if config.training.predict_with_generate():
         trainer = GenerationBasedSeq2SeqTrainer(
             model=model,
@@ -249,23 +269,23 @@ def main():
             config=config,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            eval_examples=datasets["validation"] if training_args.do_eval or training_args.do_train else None, # train때도 필요
+            eval_examples=datasets["validation"] if training_args.do_eval or training_args.do_train else None,
             data_collator=data_collator,
             compute_metrics=compute_metrics,
             wrapped_tokenizer=wrapped_tokenizer,
         )
     else:
         trainer = QuestionAnsweringTrainer(
-        model=model,
-        args=training_args,
-        config=config,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        eval_examples=datasets["validation"] if training_args.do_eval else None,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        wrapped_tokenizer=wrapped_tokenizer,
-    )
+            model=model,
+            args=training_args,
+            config=config,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics,
+            wrapped_tokenizer=wrapped_tokenizer,
+        )
     
     # Training
     if training_args.do_train:
@@ -277,12 +297,18 @@ def main():
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
 
+        # Log training results to wandb
+        wandb.log(train_result.metrics)
+
     # Prediction
     if training_args.do_predict:
         logger.info("*** Prediction ***")
         predictions = trainer.predict(test_dataset=eval_dataset, test_examples=datasets["validation"])
         logger.info("No metric can be presented because there is no correct answer given. Job done!")
-        
+
+        # Log prediction metrics to wandb (if available)
+        wandb.log({"predictions": predictions.metrics})
+
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
@@ -290,6 +316,9 @@ def main():
         metrics["eval_samples"] = len(eval_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+        # Log evaluation metrics to wandb
+        wandb.log(metrics)
 
 if __name__ == "__main__":
     main()
