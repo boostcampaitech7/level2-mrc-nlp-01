@@ -313,3 +313,8 @@ class Seq2SeqLMTokenizerWrapper:
                 predictions=formatted_predictions,
                 label_ids=references,
             )
+        else:
+            return EvalPrediction(
+                predictions=formatted_predictions,
+                label_ids=references,
+            )

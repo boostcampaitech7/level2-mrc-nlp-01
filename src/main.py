@@ -98,11 +98,11 @@ def set_hyperparameters(config, training_args):
     training_args.weight_decay = float(config.training.weight_decay())
     training_args.lr_scheduler_type  = config.training.scheduler()
     training_args.predict_with_generate  = config.training.predict_with_generate()
-    training_args.save_strategy = 'epoch',
-    training_args.evaluation_strategy = 'epoch',
-    training_args.save_total_limit = 2,
-    training_args.logging_strategy = 'epoch',
-    training_args.load_best_model_at_end = True,
+    training_args.save_strategy = 'epoch'
+    training_args.evaluation_strategy = 'epoch'
+    training_args.save_total_limit = 2
+    training_args.logging_strategy = 'epoch'
+    training_args.load_best_model_at_end = True
     training_args.remove_unused_columns = True
 
     return training_args
@@ -184,8 +184,16 @@ def main():
     train_dataset, eval_dataset = None, None
     if training_args.do_train:
         train_dataset = datasets["train"]
+        eval_dataset = datasets["validation"]
         train_dataset = train_dataset.map(
             wrapped_tokenizer.encode_train,
+            batched=True,
+            remove_columns=column_names,
+            num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
+            load_from_cache_file=not config.dataQA.overwrite_cache(False)
+            )
+        eval_dataset = eval_dataset.map(
+            wrapped_tokenizer.encode_valid,
             batched=True,
             remove_columns=column_names,
             num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
@@ -217,12 +225,15 @@ def main():
                 )
     
     # Data collator
-    data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
-    data_collator = DataCollatorForSeq2Seq(
-            wrapped_tokenizer.tokenizer,
-            model=model,
-            pad_to_multiple_of=8 if training_args.fp16 else None
-        )
+    # Generation 여부에 따라 Data collator 선택
+    if config.training.predict_with_generate():
+        data_collator = DataCollatorForSeq2Seq(
+                wrapped_tokenizer.tokenizer,
+                model=model,
+                pad_to_multiple_of=8 if training_args.fp16 else None
+            )
+    else:
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 
     # Metric for evaluation
     metric = load_metric("squad")
@@ -238,7 +249,7 @@ def main():
             config=config,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            eval_examples=datasets["validation"] if training_args.do_eval or training_args.do_train else None, # train때도 필요
             data_collator=data_collator,
             compute_metrics=compute_metrics,
             wrapped_tokenizer=wrapped_tokenizer,
