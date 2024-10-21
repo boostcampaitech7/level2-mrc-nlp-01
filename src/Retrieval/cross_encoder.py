@@ -186,7 +186,7 @@ class CrossDenseRetrieval:
                     
         self.model.save_pretrained(os.path.join(self.data_path, f"cross_encoder"))
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, do_predict: bool = False) -> Union[Tuple[List, List], pd.DataFrame]: 
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, do_predict: bool = False, concat_context: bool = True) -> Union[Tuple[List, List], pd.DataFrame]: 
         
         # contexts_candidate -> 정답이 될 수 있는 passage 후보군
         # 따라서 이 retriever의 고점은 sampler의 성능을 넘길 수 없다.
@@ -217,10 +217,10 @@ class CrossDenseRetrieval:
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join(
-                        [contexts_candidate[idx][pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [contexts_candidate[idx][pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
                     tmp["answers"] = example["answers"]

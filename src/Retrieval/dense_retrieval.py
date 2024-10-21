@@ -280,7 +280,7 @@ class DenseRetrieval:
             print("Embedding pickle saved.")
 
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, concat_context: bool = True) -> Union[Tuple[List, List], pd.DataFrame]:
         
         assert self.p_embeddings is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
 
@@ -306,10 +306,10 @@ class DenseRetrieval:
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
                     tmp["answers"] = example["answers"]
