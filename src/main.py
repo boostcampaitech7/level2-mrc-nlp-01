@@ -27,6 +27,10 @@ from Retrieval.dense_retrieval import DenseRetrieval
 from Retrieval.cross_encoder import CrossDenseRetrieval
 from dataclasses import dataclass, field
 import nltk
+import wandb
+import yaml
+from datetime import datetime
+import pytz
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -105,7 +109,8 @@ def set_hyperparameters(config, training_args):
     training_args.save_strategy = 'epoch'
     training_args.evaluation_strategy = 'epoch'
     training_args.save_total_limit = 2
-    training_args.logging_strategy = 'epoch'
+    training_args.logging_strategy = 'steps'
+    training_args.logging_steps = config.training.logging_steps(10) # Config.yaml에서 조절가능
     training_args.load_best_model_at_end = True
     training_args.remove_unused_columns = True
 
@@ -340,6 +345,19 @@ def main():
     
     nltk.download('punkt')
     nltk.download('punkt_tab')
+
+    secrets = load_config(config_path="secrets.yaml")
+    wandb.login(key=secrets["wandb-api-key"])
+    
+    model_name = config.model.name
+    tz = pytz.timezone('Asia/Seoul')
+    start_time = datetime.now(tz).strftime("%Y%m%d_%H%M%S")
+    run_name = f"{model_name}_{start_time}"
+
+    wandb.init(project="MRC_project", config=config, name=run_name)
+    
+    # Start wandb monitoring the model and parameters
+    wandb.watch(model)
     
     # Argument parsing
     parser = HfArgumentParser((CustomTrainingArguments, DataArguments, ModuleArguments))
