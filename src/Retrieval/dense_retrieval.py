@@ -17,10 +17,7 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenat
 from tqdm.auto import tqdm
 from tqdm import trange
 from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
-from sparse_retrieval import SparseRetrieval
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import Config
+from Retrieval.sparse_retrieval import SparseRetrieval
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -60,16 +57,14 @@ class BertEncoder(BertPreTrainedModel):
         return pooled_output
 
 class DenseRetrieval:
-    def __init__(self) -> NoReturn:
+    def __init__(self, config) -> NoReturn:
+        set_seed(config.seed())
 
-        self.config = Config(path='./dense_encoder_config.yaml')
-
-        set_seed(self.config.seed())
-
-        data_path = os.path.dirname(self.config.dataset.train_path())
-        context_path = self.config.dataset.context_path()
+        data_path = os.path.dirname(config.dataset.train_path())
+        context_path = config.dataset.context_path()
 
         self.data_path = data_path
+        self.context_path = context_path
         with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -83,21 +78,21 @@ class DenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.max_len = 512
         
-        self.model_name = self.config.model.name()
+        self.model_name = config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModel.from_pretrained(self.model_name)
         self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
         self.p_embeddings = None
 
-        self.num_negatives = self.config.training.num_negative()
+        self.num_negatives = config.training.num_negative()
         self.args =TrainingArguments(
-            output_dir=self.config.training.output_dir(),
-            learning_rate=float(self.config.training.learning_rate()),
-            per_device_train_batch_size=self.config.training.per_device_train_batch_size(),
-            per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
-            num_train_epochs=self.config.training.epochs(),
-            weight_decay=self.config.training.weight_decay(),
+            output_dir=config.training.output_dir(),
+            learning_rate=float(config.training.learning_rate()),
+            per_device_train_batch_size=config.training.per_device_train_batch_size(),
+            per_device_eval_batch_size=config.training.per_device_eval_batch_size(),
+            num_train_epochs=config.training.epochs(),
+            weight_decay=config.training.weight_decay(),
             )
         self.indexer = None
 
@@ -108,7 +103,7 @@ class DenseRetrieval:
             num_neg = self.num_negatives
 
         # Initialize SparseRetrieval
-        sparse_retriever = SparseRetrieval(tokenize_fn=self.tokenizer.tokenize, context_path=self.config.dataset.context_path())
+        sparse_retriever = SparseRetrieval(tokenize_fn=self.tokenizer.tokenize, context_path=self.context_path)
         sparse_retriever.get_sparse_embedding()
 
         p_with_neg = []
@@ -285,7 +280,7 @@ class DenseRetrieval:
             print("Embedding pickle saved.")
 
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, concat_context: bool = True) -> Union[Tuple[List, List], pd.DataFrame]:
         
         assert self.p_embeddings is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
 
@@ -311,10 +306,10 @@ class DenseRetrieval:
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
                     tmp["answers"] = example["answers"]
@@ -469,18 +464,18 @@ class DenseRetrieval:
 
         self.get_dense_embedding()
         
-        if config.dataRetreival.faiss.use(False):
+        if config.dataRetrieval.faiss.use(False):
             self.build_faiss(
-                num_clusters=config.dataRetreival.faiss.num_clusters(64)
+                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
             )
             df = self.retrieve_faiss(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         else:
             df = self.retrieve(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         
         if training_args.do_predict:

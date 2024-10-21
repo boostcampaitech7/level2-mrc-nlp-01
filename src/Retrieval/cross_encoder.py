@@ -20,12 +20,9 @@ from tqdm import trange
 from transformers import (
     AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
 )
-from NegativeSampler import NegativeSampler
-from SparseNegativeSampler import SparseNegativeSampler
-from sparse_retrieval import SparseRetrieval
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import Config
+# from NegativeSampler import NegativeSampler
+from Retrieval.SparseNegativeSampler import SparseNegativeSampler
+from Retrieval.sparse_retrieval import SparseRetrieval
 
 def dummy_row(question):
     hashed = hashlib.sha256()
@@ -50,14 +47,11 @@ def timer(name):
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 class CrossDenseRetrieval:
-    def __init__(self) -> NoReturn:
+    def __init__(self, config) -> NoReturn:
+        set_seed(config.seed())
 
-        self.config = Config(path='./dense_encoder_config.yaml')
-
-        set_seed(self.config.seed())
-
-        data_path = os.path.dirname(self.config.dataset.train_path())
-        context_path = self.config.dataset.context_path()
+        data_path = os.path.dirname(config.dataset.train_path())
+        context_path = config.dataset.context_path()
 
         self.data_path = data_path
         with open(context_path, "r", encoding="utf-8") as f:
@@ -73,21 +67,21 @@ class CrossDenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.max_len = 512
         
-        self.model_name = self.config.model.name()
+        self.model_name = config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1).to(self.device)
         self.sampler = SparseNegativeSampler(self.contexts)
         sparse_retriever = SparseRetrieval(self.tokenizer.tokenize)
         self.sampler.make_sparse_embedding(sparse_retriever)
         
-        self.num_negatives = self.config.training.num_negative()
+        self.num_negatives = config.training.num_negative()
         self.args =TrainingArguments(
-            output_dir=self.config.training.output_dir(),
-            learning_rate=float(self.config.training.learning_rate()),
-            per_device_train_batch_size=self.config.training.per_device_train_batch_size(),
-            per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
-            num_train_epochs=self.config.training.epochs(),
-            weight_decay=self.config.training.weight_decay(),
+            output_dir=config.training.output_dir(),
+            learning_rate=float(config.training.learning_rate()),
+            per_device_train_batch_size=config.training.per_device_train_batch_size(),
+            per_device_eval_batch_size=config.training.per_device_eval_batch_size(),
+            num_train_epochs=config.training.epochs(),
+            weight_decay=config.training.weight_decay(),
             )
         self.indexer = None
 
@@ -192,7 +186,7 @@ class CrossDenseRetrieval:
                     
         self.model.save_pretrained(os.path.join(self.data_path, f"cross_encoder"))
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, do_predict: bool = False) -> Union[Tuple[List, List], pd.DataFrame]: 
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, do_predict: bool = False, concat_context: bool = True) -> Union[Tuple[List, List], pd.DataFrame]: 
         
         # contexts_candidate -> 정답이 될 수 있는 passage 후보군
         # 따라서 이 retriever의 고점은 sampler의 성능을 넘길 수 없다.
@@ -223,10 +217,10 @@ class CrossDenseRetrieval:
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join(
-                        [contexts_candidate[idx][pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [contexts_candidate[idx][pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
                     tmp["answers"] = example["answers"]
@@ -324,10 +318,9 @@ class CrossDenseRetrieval:
         
         df = self.retrieve(
             datasets["validation"],
-            topk=config.dataRetreival.top_k(5),
+            topk=config.dataRetrieval.top_k(5),
             do_predict = training_args.do_predict
         )
-        
         if training_args.do_predict:
             f = Features(
                 {
@@ -336,6 +329,7 @@ class CrossDenseRetrieval:
                     "question": Value(dtype="string", id=None),
                 }
             )
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         elif training_args.do_eval:
             f = Features(
                 {
@@ -351,7 +345,7 @@ class CrossDenseRetrieval:
                 }
             )
         
-        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
         return datasets
 
 if __name__ == "__main__":

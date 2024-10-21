@@ -81,6 +81,15 @@ class SparseRetrieval:
         self.bm25 = None # BM25 모델을 저장할 변수
         self.tokenize_fn = tokenize_fn
 
+    def train(self, emb_path=None):
+        if emb_path is None:
+            pickle_name = f"bm25_sparse_embedding.bin"
+            emd_path = os.path.join(self.data_path, pickle_name)
+        tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
+        self.bm25 = BM25Okapi(tokenized_contexts)
+        with open(emd_path, "wb") as file:
+            pickle.dump(self.bm25, file)
+            print("-----------BM25 pickle saved.", "saved at data/-----------")
 
     def get_sparse_embedding(self) -> NoReturn:
 
@@ -102,12 +111,8 @@ class SparseRetrieval:
             print("-----------we loaded it from data/ not src-----------")
         else:
             print("Build BM25 embedding")
-            tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
-            self.bm25 = BM25Okapi(tokenized_contexts)
-            with open(emd_path, "wb") as file:
-                pickle.dump(self.bm25, file)
-                print("-----------BM25 pickle saved.", "saved at data/-----------")
-
+            self.train(emd_path)
+            
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
         """
@@ -146,7 +151,7 @@ class SparseRetrieval:
             print("Faiss Indexer Saved.")
 
     def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, concat_context: bool = True
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -234,10 +239,10 @@ class SparseRetrieval:
                     "question": example["question"],
                     "id": example["id"],
                     # Retrieve한 Passage의 id, context를 반환합니다.
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
                     tmp["original_context"] = example["context"]
@@ -433,6 +438,8 @@ class SparseRetrieval:
                     "question": Value(dtype="string", id=None),
                 }
             )
+        
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         elif training_args.do_eval:
             f = Features(
                 {
@@ -448,7 +455,7 @@ class SparseRetrieval:
                 }
             )
         
-        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+            datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
         return datasets
 
 
