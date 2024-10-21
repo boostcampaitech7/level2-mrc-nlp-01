@@ -1,5 +1,6 @@
 import streamlit as st
-from server.page.Page import Page
+from server.utils.Page import Page
+from server.utils.data_loader import load_dataset
 from datasets import load_from_disk
 from config import Config
 from transformers import AutoTokenizer
@@ -12,9 +13,6 @@ class TrainingDatasetQAPage(Page):
     def __init__(self):
         super().__init__()
     
-    @st.cache_resource
-    def load_dataset(_self):
-        return load_from_disk("./data/train_dataset")
     
     @st.cache_data
     def load_tokenizer(_self):
@@ -117,7 +115,7 @@ class TrainingDatasetQAPage(Page):
         
     
     def body(self):
-        dataset  = self.load_dataset()
+        dataset  = load_dataset()
         train_dataset = dataset["train"]
         idx = st.slider("몇 번째 데이터셋을 보시겠습니까?", 0, len(train_dataset)-1, 0)
         input_idx = st.number_input("", value=idx, min_value=0, max_value=len(train_dataset)-1)

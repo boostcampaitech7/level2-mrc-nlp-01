@@ -13,14 +13,16 @@ import random
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from torch.cuda.amp import GradScaler ,autocast
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
-from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
-from Retrieval.sparse_retrieval import SparseRetrieval
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import Config
+from transformers import (
+    AutoModel, AutoTokenizer, TrainingArguments, 
+    BertModel, RobertaModel, BertPreTrainedModel, RobertaPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+)
+from Retrieval.sparse_retrieval import SparseRetrieval
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -59,17 +61,39 @@ class BertEncoder(BertPreTrainedModel):
         pooled_output = outputs[1]
         return pooled_output
 
+class RoBERTaEncoder(RobertaPreTrainedModel):
+    def __init__(self,
+        config
+    ):
+        super(RoBERTaEncoder, self).__init__(config)
+
+        self.roberta = RobertaModel(config)
+        self.init_weights()
+
+    def forward(self,
+            input_ids,
+            attention_mask=None,
+            token_type_ids=None
+        ):
+
+        outputs = self.roberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids
+        )
+
+        pooled_output = outputs[1]
+        return pooled_output
+
 class DenseRetrieval:
-    def __init__(self) -> NoReturn:
+    def __init__(self, config) -> NoReturn:
+        set_seed(config.seed())
 
-        self.config = Config(path='./dense_encoder_config.yaml')
-
-        set_seed(self.config.seed())
-
-        data_path = os.path.dirname(self.config.dataset.train_path())
-        context_path = self.config.dataset.context_path()
+        data_path = os.path.dirname(config.dataset.train_path())
+        context_path = config.dataset.context_path()
 
         self.data_path = data_path
+        self.context_path = context_path
         with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -83,22 +107,29 @@ class DenseRetrieval:
         self.dataset = load_from_disk("./data/train_dataset/")['train']
         self.max_len = 512
         
-        self.model_name = self.config.model.name()
+        self.model_name = config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModel.from_pretrained(self.model_name)
-        self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
-        self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+
+        if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+            self.p_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+            self.q_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+        else:  # BERT 또는 다른 모델의 경우 기본적으로 BertEncoder 사용
+            self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+            self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+
         self.p_embeddings = None
 
-        self.num_negatives = self.config.training.num_negative()
+        self.num_negatives = config.training.num_negative()
         self.args =TrainingArguments(
-            output_dir=self.config.training.output_dir(),
-            learning_rate=float(self.config.training.learning_rate()),
-            per_device_train_batch_size=self.config.training.per_device_train_batch_size(),
-            per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
-            num_train_epochs=self.config.training.epochs(),
-            weight_decay=self.config.training.weight_decay(),
+            output_dir=config.training.output_dir(),
+            learning_rate=float(config.training.learning_rate()),
+            per_device_train_batch_size=config.training.per_device_train_batch_size(),
+            per_device_eval_batch_size=config.training.per_device_eval_batch_size(),
+            num_train_epochs=config.training.epochs(),
+            weight_decay=config.training.weight_decay(),
             )
+        self.grad_scaler = GradScaler()
         self.indexer = None
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
@@ -108,7 +139,7 @@ class DenseRetrieval:
             num_neg = self.num_negatives
 
         # Initialize SparseRetrieval
-        sparse_retriever = SparseRetrieval(tokenize_fn=self.tokenizer.tokenize, context_path=self.config.dataset.context_path())
+        sparse_retriever = SparseRetrieval(tokenize_fn=self.tokenizer.tokenize, context_path=self.context_path)
         sparse_retriever.get_sparse_embedding()
 
         p_with_neg = []
@@ -132,12 +163,20 @@ class DenseRetrieval:
 
         p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
         p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
-        p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+        if 'token_type_ids' in p_seqs:
+            p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
 
-        train_dataset = TensorDataset(
-            q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
-            p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
-        )
+        # Modify the TensorDataset creation
+        if 'token_type_ids' in p_seqs:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
+                p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
+            )
+        else:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'],
+                p_seqs['input_ids'], p_seqs['attention_mask'],
+            )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
 
@@ -182,39 +221,44 @@ class DenseRetrieval:
 
                     targets = torch.zeros(batch_size).long().to(self.device)
 
-                    q_inputs = {
-                        "input_ids": batch[0].to(self.device),
-                        "attention_mask": batch[1].to(self.device),
-                        "token_type_ids": batch[2].to(self.device)
-                    }
+                    with autocast():
+                        q_inputs = {
+                            "input_ids": batch[0].to(self.device),
+                            "attention_mask": batch[1].to(self.device),
+                        }
+                        if len(batch) > 4:  # If token_type_ids are present
+                            q_inputs["token_type_ids"] = batch[2].to(self.device)
+                            p_inputs = {
+                                "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                            }
+                        else:
+                            p_inputs = {
+                                "input_ids": batch[2].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                            }
 
-                    p_inputs = {
-                        "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
-                    }
+                        q_outputs = self.q_encoder(**q_inputs)
+                        p_outputs = self.p_encoder(**p_inputs)
 
-                    q_outputs = self.q_encoder(**q_inputs)
-                    p_outputs = self.p_encoder(**p_inputs)
+                        q_outputs = q_outputs.view(batch_size, 1, -1)
+                        p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
 
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-                    p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
-
-                    sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
-                
-                    loss = F.nll_loss(sim_scores, targets)
+                        sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
+                        sim_scores = sim_scores.view(batch_size, -1)
+                        sim_scores = F.log_softmax(sim_scores, dim=1)
                     
+                        loss = F.nll_loss(sim_scores, targets)
+                    
+                    self.grad_scaler.scale(loss).backward()
+
                     tepoch.set_postfix(loss=f"{str(loss.item())}", step=f"{global_step+1}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
-
-                    loss.backward()
-                    optimizer.step()
+                    
+                    self.grad_scaler.step(optimizer)
+                    self.grad_scaler.update()
                     scheduler.step()
-
-                    self.q_encoder.zero_grad()
-                    self.p_encoder.zero_grad()
-
+                    optimizer.zero_grad()
                     global_step += 1
 
                     torch.cuda.empty_cache()
@@ -256,8 +300,12 @@ class DenseRetrieval:
         else:
             print("Build passage embedding")
             if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
-                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
-                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+                    self.p_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                else:
+                    self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
             else:
                 self.train()
 
@@ -285,7 +333,7 @@ class DenseRetrieval:
             print("Embedding pickle saved.")
 
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, concat_context: bool = True) -> Union[Tuple[List, List], pd.DataFrame]:
         
         assert self.p_embeddings is not None, "get_dense_embedding() 메소드를 먼저 수행해줘야합니다."
 
@@ -311,10 +359,10 @@ class DenseRetrieval:
                 tmp = {
                     "question": example["question"],
                     "id": example["id"],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]]
                 }
+                if concat_context:
+                    tmp["context"] = " ".join(tmp["context"])
                 if "context" in example.keys() and "answers" in example.keys():
                     tmp["original_context"] = example["context"]
                     tmp["answers"] = example["answers"]
@@ -469,18 +517,18 @@ class DenseRetrieval:
 
         self.get_dense_embedding()
         
-        if config.dataRetreival.faiss.use(False):
+        if config.dataRetrieval.faiss.use(False):
             self.build_faiss(
-                num_clusters=config.dataRetreival.faiss.num_clusters(64)
+                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
             )
             df = self.retrieve_faiss(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         else:
             df = self.retrieve(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         
         if training_args.do_predict:
@@ -509,6 +557,7 @@ class DenseRetrieval:
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
 
+      def main():
 if __name__ == "__main__":
 
     retriever = DenseRetrieval()
