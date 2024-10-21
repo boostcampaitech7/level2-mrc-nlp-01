@@ -81,6 +81,15 @@ class SparseRetrieval:
         self.bm25 = None # BM25 모델을 저장할 변수
         self.tokenize_fn = tokenize_fn
 
+    def train(self, emb_path=None):
+        if emb_path is None:
+            pickle_name = f"bm25_sparse_embedding.bin"
+            emd_path = os.path.join(self.data_path, pickle_name)
+        tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
+        self.bm25 = BM25Okapi(tokenized_contexts)
+        with open(emd_path, "wb") as file:
+            pickle.dump(self.bm25, file)
+            print("-----------BM25 pickle saved.", "saved at data/-----------")
 
     def get_sparse_embedding(self) -> NoReturn:
 
@@ -102,12 +111,8 @@ class SparseRetrieval:
             print("-----------we loaded it from data/ not src-----------")
         else:
             print("Build BM25 embedding")
-            tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
-            self.bm25 = BM25Okapi(tokenized_contexts)
-            with open(emd_path, "wb") as file:
-                pickle.dump(self.bm25, file)
-                print("-----------BM25 pickle saved.", "saved at data/-----------")
-
+            self.train(emd_path)
+            
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
         """
