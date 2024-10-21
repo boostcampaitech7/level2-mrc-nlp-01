@@ -76,7 +76,7 @@ class SparseNegativeSampler(NegativeSampler):
             "negatives": neg_samples
         }
         
-    def offer_bulk(self, dataset, num_negatives, exclude_positive=True):
+    def offer_bulk(self, dataset, num_negatives, exclude_positive=True, do_predict=False):
         questions = []
         contexts = []
         p_negs = []
@@ -90,7 +90,10 @@ class SparseNegativeSampler(NegativeSampler):
             if len(neg_samples) > num_negatives:
                 neg_samples = neg_samples[:num_negatives]
             questions.append(dataset["question"][i])
-            contexts.append(dataset["context"][i])
+            if do_predict:    
+                contexts.append("")
+            else:
+                contexts.append(dataset["context"][i])
             p_negs.append(neg_samples)
         
         return {

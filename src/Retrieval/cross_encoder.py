@@ -192,7 +192,7 @@ class CrossDenseRetrieval:
                     
         self.model.save_pretrained(os.path.join(self.data_path, f"cross_encoder"))
 
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]: 
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, do_predict: bool = False) -> Union[Tuple[List, List], pd.DataFrame]: 
         
         # contexts_candidate -> 정답이 될 수 있는 passage 후보군
         # 따라서 이 retriever의 고점은 sampler의 성능을 넘길 수 없다.
@@ -211,7 +211,7 @@ class CrossDenseRetrieval:
             return (doc_scores, [contexts_candidate[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
-            contexts_candidate = self.sampler.offer_bulk(query_or_dataset, 25, exclude_positive=False)["negatives"]
+            contexts_candidate = self.sampler.offer_bulk(query_or_dataset, 25, exclude_positive=False, do_predict=do_predict)["negatives"]
             total = []
             with timer("query exhaustive search"):
                 doc_scores, doc_indices = self.get_relevant_doc_bulk(
@@ -316,10 +316,16 @@ class CrossDenseRetrieval:
 
     def run(self, datasets, training_args, config):
 
-        self.get_dense_embedding()
+        if os.path.exists(os.path.join(self.data_path, "cross_encoder")):
+            self.model = AutoModelForSequenceClassification.from_pretrained(os.path.join(self.data_path, "cross_encoder"))
+        else:
+            self.train()
+    
+        
         df = self.retrieve(
             datasets["validation"],
             topk=config.dataRetreival.top_k(5),
+            do_predict = training_args.do_predict
         )
         
         if training_args.do_predict:
