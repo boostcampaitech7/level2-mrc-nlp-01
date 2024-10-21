@@ -47,6 +47,7 @@ class DataArguments:
 @dataclass
 class CustomTrainingArguments(TrainingArguments):
     output_dir: str =field(default="./outputs", metadata = {"help": "The output directory"})
+    reader_only: bool = field(default=False, metadata={"help": "Whether to use reader only"})
 
 def configure_logging():
     logger = logging.getLogger(__name__)

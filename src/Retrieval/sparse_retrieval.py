@@ -436,6 +436,8 @@ class SparseRetrieval:
         elif training_args.do_eval:
             f = Features(
                 {
+                    "question": Value(dtype="string", id=None),
+                    "id": Value(dtype="string", id=None),
                     "answers": Sequence(
                         feature={
                             "text": Value(dtype="string", id=None),
@@ -445,6 +447,7 @@ class SparseRetrieval:
                         id=None,
                     ),
                     "context": Value(dtype="string", id=None),
+                    "original_context": Value(dtype="string", id=None),
                 }
             )
         

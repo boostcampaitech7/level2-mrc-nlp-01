@@ -13,11 +13,15 @@ import random
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from torch.cuda.amp import GradScaler ,autocast
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
-from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
-from sparse_retrieval import SparseRetrieval
+from transformers import(
+    AutoModel, AutoTokenizer, TrainingArguments, 
+    BertModel, RobertaModel, BertPreTrainedModel, RobertaPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+)
+from .sparse_retrieval import SparseRetrieval
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
@@ -59,6 +63,30 @@ class BertEncoder(BertPreTrainedModel):
         pooled_output = outputs[1]
         return pooled_output
 
+class RoBERTaEncoder(RobertaPreTrainedModel):
+    def __init__(self,
+        config
+    ):
+        super(RoBERTaEncoder, self).__init__(config)
+
+        self.roberta = RobertaModel(config)
+        self.init_weights()
+
+    def forward(self,
+            input_ids,
+            attention_mask=None,
+            token_type_ids=None
+        ):
+
+        outputs = self.roberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids
+        )
+
+        pooled_output = outputs[1]
+        return pooled_output
+
 class DenseRetrieval:
     def __init__(self) -> NoReturn:
 
@@ -86,8 +114,14 @@ class DenseRetrieval:
         self.model_name = self.config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModel.from_pretrained(self.model_name)
-        self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
-        self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+
+        if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+            self.p_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+            self.q_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+        else:  # BERT 또는 다른 모델의 경우 기본적으로 BertEncoder 사용
+            self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+            self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+
         self.p_embeddings = None
 
         self.num_negatives = self.config.training.num_negative()
@@ -98,7 +132,9 @@ class DenseRetrieval:
             per_device_eval_batch_size=self.config.training.per_device_eval_batch_size(),
             num_train_epochs=self.config.training.epochs(),
             weight_decay=self.config.training.weight_decay(),
+            gradient_accumulation_steps=self.config.training.gradient_accumulation_steps()
             )
+
         self.indexer = None
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
@@ -132,12 +168,20 @@ class DenseRetrieval:
 
         p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
         p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
-        p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+        if 'token_type_ids' in p_seqs:
+            p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
 
-        train_dataset = TensorDataset(
-            q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
-            p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
-        )
+        # Modify the TensorDataset creation
+        if 'token_type_ids' in p_seqs:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
+                p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
+            )
+        else:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'],
+                p_seqs['input_ids'], p_seqs['attention_mask'],
+            )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
 
@@ -148,6 +192,7 @@ class DenseRetrieval:
         print("Training encoder")
 
         batch_size = args.per_device_train_batch_size
+        accumulation_steps = 4  # Adjust this value based on your needs
 
         self.prepare_in_batch_negative()
 
@@ -166,6 +211,8 @@ class DenseRetrieval:
             num_training_steps=t_total
         )
 
+        scaler = GradScaler()
+
         global_step = 0
 
         self.q_encoder.zero_grad()
@@ -175,54 +222,58 @@ class DenseRetrieval:
 
         for i in tqdm(range(int(args.num_train_epochs)), desc="Epoch"):
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
-                for batch in tepoch:
-
+                for step, batch in enumerate(tepoch):
                     self.q_encoder.train()
                     self.p_encoder.train()
 
                     targets = torch.zeros(batch_size).long().to(self.device)
 
-                    q_inputs = {
-                        "input_ids": batch[0].to(self.device),
-                        "attention_mask": batch[1].to(self.device),
-                        "token_type_ids": batch[2].to(self.device)
-                    }
+                    with autocast():
+                        q_inputs = {
+                            "input_ids": batch[0].to(self.device),
+                            "attention_mask": batch[1].to(self.device),
+                        }
+                        if len(batch) > 4:  # If token_type_ids are present
+                            q_inputs["token_type_ids"] = batch[2].to(self.device)
+                            p_inputs = {
+                                "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                            }
+                        else:
+                            p_inputs = {
+                                "input_ids": batch[2].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                                "attention_mask": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                            }
 
-                    p_inputs = {
-                        "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
-                    }
+                        q_outputs = self.q_encoder(**q_inputs)
+                        p_outputs = self.p_encoder(**p_inputs)
 
-                    q_outputs = self.q_encoder(**q_inputs)
-                    p_outputs = self.p_encoder(**p_inputs)
+                        q_outputs = q_outputs.view(batch_size, 1, -1)
+                        p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
 
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-                    p_outputs = p_outputs.view(batch_size, self.num_negatives + 1, -1)
-
-                    sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
-                
-                    loss = F.nll_loss(sim_scores, targets)
+                        sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()
+                        sim_scores = sim_scores.view(batch_size, -1)
+                        sim_scores = F.log_softmax(sim_scores, dim=1)
                     
-                    tepoch.set_postfix(loss=f"{str(loss.item())}", step=f"{global_step+1}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
+                        loss = F.nll_loss(sim_scores, targets)
+                        loss = loss / accumulation_steps
 
-                    loss.backward()
-                    optimizer.step()
-                    scheduler.step()
+                    scaler.scale(loss).backward()
 
-                    self.q_encoder.zero_grad()
-                    self.p_encoder.zero_grad()
-
-                    global_step += 1
+                    if (step + 1) % accumulation_steps == 0:
+                        scaler.step(optimizer)
+                        scaler.update()
+                        scheduler.step()
+                        optimizer.zero_grad()
+                        global_step += 1
+                        tepoch.set_postfix(loss=f"{loss.item():.4f}", step=f"{global_step}/{t_total}", lr=f"{scheduler.get_last_lr()[0]:.8f}")
 
                     torch.cuda.empty_cache()
                     del p_inputs, q_inputs
 
         self.p_encoder.save_pretrained(os.path.join(self.data_path, f"p_encoder"))
         self.q_encoder.save_pretrained(os.path.join(self.data_path, f"q_encoder"))
-
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
         """
@@ -256,8 +307,12 @@ class DenseRetrieval:
         else:
             print("Build passage embedding")
             if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
-                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
-                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+                    self.p_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+                else:
+                    self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                    self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
             else:
                 self.train()
 
@@ -467,6 +522,12 @@ class DenseRetrieval:
 
     def run(self, datasets, training_args, config):
 
+        if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
+            self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder"))
+            self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder"))
+        else:
+            self.train()
+
         self.get_dense_embedding()
         
         if config.dataRetreival.faiss.use(False):
@@ -494,6 +555,8 @@ class DenseRetrieval:
         elif training_args.do_eval:
             f = Features(
                 {
+                    "question": Value(dtype="string", id=None),
+                    "id": Value(dtype="string", id=None),
                     "answers": Sequence(
                         feature={
                             "text": Value(dtype="string", id=None),
@@ -503,6 +566,7 @@ class DenseRetrieval:
                         id=None,
                     ),
                     "context": Value(dtype="string", id=None),
+                    "original_context": Value(dtype="string", id=None),
                 }
             )
         
