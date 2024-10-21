@@ -464,18 +464,18 @@ class DenseRetrieval:
 
         self.get_dense_embedding()
         
-        if config.dataRetreival.faiss.use(False):
+        if config.dataRetrieval.faiss.use(False):
             self.build_faiss(
-                num_clusters=config.dataRetreival.faiss.num_clusters(64)
+                num_clusters=config.dataRetrieval.faiss.num_clusters(64)
             )
             df = self.retrieve_faiss(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         else:
             df = self.retrieve(
                 datasets["validation"],
-                topk=config.dataRetreival.top_k(5),
+                topk=config.dataRetrieval.top_k(5),
             )
         
         if training_args.do_predict:

@@ -318,7 +318,7 @@ class CrossDenseRetrieval:
         
         df = self.retrieve(
             datasets["validation"],
-            topk=config.dataRetreival.top_k(5),
+            topk=config.dataRetrieval.top_k(5),
             do_predict = training_args.do_predict
         )
         if training_args.do_predict:
