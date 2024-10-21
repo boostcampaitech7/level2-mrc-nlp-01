@@ -557,7 +557,6 @@ class DenseRetrieval:
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
 
-      def main():
 if __name__ == "__main__":
 
     retriever = DenseRetrieval()
