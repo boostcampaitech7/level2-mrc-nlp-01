@@ -251,7 +251,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
         eval_examples=datasets["validation"] if training_args.do_eval else None,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        wrapped_tokenizer=wrapped_tokenizer,
+        wrapped_tokenizer=wrapped_tokenizer
     )
     
     # Training
