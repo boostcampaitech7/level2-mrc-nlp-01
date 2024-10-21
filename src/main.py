@@ -5,7 +5,7 @@ import random
 import logging
 import numpy as np
 import torch
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset, concatenate_datasets
 from evaluate import load as load_metric
 from transformers import (
     AutoConfig,
@@ -144,6 +144,13 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
     datasets = use_proper_datasets(config, training_args)
     if is_testing:
         datasets = use_small_datasets(datasets)
+
+    if config.dataQA.useDataset(None) is not None:
+        additional_datasets = load_dataset(config.dataQA.useDataset())
+        if is_testing:
+            additional_datasets = use_small_datasets(additional_datasets)
+        datasets["train"] = concatenate_datasets([datasets["train"], additional_datasets["train"]])
+        datasets["validation"] = concatenate_datasets([datasets["validation"], additional_datasets["validation"]])
 
     # Load model and tokenizer
     model_name = use_proper_model(config, training_args)
