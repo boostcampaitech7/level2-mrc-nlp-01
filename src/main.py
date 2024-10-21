@@ -25,7 +25,6 @@ from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from dataclasses import dataclass, field
 import nltk
-from torch.nn import CrossEntropyLoss
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
