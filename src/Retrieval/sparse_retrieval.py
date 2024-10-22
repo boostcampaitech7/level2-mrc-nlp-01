@@ -32,10 +32,8 @@ class SparseRetrieval:
         self,
         tokenize_fn,
         context_path: Optional[str] = "wikipedia_documents.json",
-        testing: bool = False,
-        
+        testing: bool = False
     ) -> NoReturn:
-        self.bm25=None
 
         """
         Arguments:
@@ -147,44 +145,12 @@ class SparseRetrieval:
             faiss.write_index(self.indexer, indexer_path)
             print("Faiss Indexer Saved.")
 
-    def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
-    ) -> Union[Tuple[List, List], pd.DataFrame]:
-
-        """
-        Arguments:
-            query_or_dataset (Union[str, Dataset]):
-                str이나 Dataset으로 이루어진 Query를 받습니다.
-                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
-                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
-                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
-            topk (Optional[int], optional): Defaults to 1.
-                상위 몇 개의 passage를 사용할 것인지 지정합니다.
-
-        Returns:
-            1개의 Query를 받는 경우  -> Tuple(List, List)
-            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
-
-        Note:
-            다수의 Query를 받는 경우,
-                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
-                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
-        """
-
-        # assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
-        # BM25는 p_embedding 필요 없음. BM25는 쿼리가 주어질 때마다 점수를 계산하기 때문...
-
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
         if isinstance(query_or_dataset, str):
-            # 단일 쿼리 처리 (변경 없음)
-            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
-            print("[Search query]\n", query_or_dataset, "\n")
-
-            for i in range(topk):
-                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
-                print(self.contexts[doc_indices[i]])
-
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
-
+            doc_scores, doc_indices = self.get_relevant_doc_bulk([query_or_dataset], k=topk)
+            doc_scores = doc_scores[0]
+            doc_indices = doc_indices[0]
+            return doc_scores, doc_indices
         elif isinstance(query_or_dataset, Dataset):
             # 저장된 결과 파일 이름 (예: 'retrieval_results.pkl')
             results_filename = "retrieval_results.pkl"
@@ -361,7 +327,7 @@ class SparseRetrieval:
         query_vec = self.tfidfv.transform([query])
         assert (
             np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+        ), "오��가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         q_emb = query_vec.toarray().astype(np.float32)
         with timer("query faiss search"):
@@ -392,6 +358,9 @@ class SparseRetrieval:
         D, I = self.indexer.search(q_embs, k)
 
         return D.tolist(), I.tolist()
+
+    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+        return self.get_relevant_doc_bulk([query], k=k)
 
     def run(self, datasets, training_args, config):
         self.get_sparse_embedding()
@@ -435,13 +404,6 @@ class SparseRetrieval:
         
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
-    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
-        tokenized_query = self.tokenize_fn(query)
-        scores = self.bm25.get_scores(tokenized_query)
-        sorted_result = np.argsort(scores)[::-1]
-        doc_scores = scores[sorted_result][:k].tolist()
-        doc_indices = sorted_result[:k].tolist()
-        return doc_scores, doc_indices
 
 
 if __name__ == "__main__":
@@ -516,3 +478,6 @@ if __name__ == "__main__":
 
         with timer("single query by exhaustive search"):
             scores, indices = retriever.retrieve(query)
+
+
+

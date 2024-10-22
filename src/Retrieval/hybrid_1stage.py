@@ -76,26 +76,15 @@ class hybrid_1stage:
         elif isinstance(query_or_dataset, Dataset):
             return self.retrieve_multi(query_or_dataset, topk=topk)
         else:
-            raise ValueError("query_or_dataset must be either str or Dataset")
-
-    def retrieve_single(self, query: str, topk: Optional[int] = 1) -> Tuple[List, List]:
-        print(f"Query: {query}")
-        sparse_scores, sparse_indices = self.sparse_retriever.get_relevant_doc(query, topk)
-        dense_scores, dense_indices = self.dense_retriever.get_relevant_doc(query, topk)
-        
-        print(f"Sparse scores: {sparse_scores}")
-        print(f"Sparse indices: {sparse_indices}")
-        print(f"Dense scores: {dense_scores}")
-        print(f"Dense indices: {dense_indices}")
+            sparse_scores, sparse_indices = self.sparse_retriever.retrieve(query, topk=topk)
+            dense_scores, dense_indices = self.dense_retriever.retrieve(query, topk=topk)
         
         merged_scores, merged_indices = self._merge_results(sparse_scores, sparse_indices, dense_scores, dense_indices, topk)
         
-        print(f"Merged scores: {merged_scores}")
-        print(f"Merged indices: {merged_indices}")
-        
-        return merged_scores, merged_indices
+        return merged_scores, [self.contexts[i] for i in merged_indices]
 
-    def retrieve_multi(self, queries: Dataset, topk: Optional[int] = 1) -> pd.DataFrame:
+
+    def retrieve_multi(self, dataset: Dataset, topk: Optional[int] = 1, use_faiss: bool = False) -> pd.DataFrame:
         total = []
         with tqdm(total=len(queries)) as pbar:
             for i, query in enumerate(queries):
@@ -121,13 +110,20 @@ class hybrid_1stage:
     def _merge_results(self, sparse_scores, sparse_indices, dense_scores, dense_indices, topk):
         merged_dict = {}
         for score, idx in zip(sparse_scores, sparse_indices):
-            merged_dict[idx] = self.ratio * score
+            merged_dict[self._get_index(idx)] = self.ratio * score
         for score, idx in zip(dense_scores, dense_indices):
-            merged_dict[idx] = merged_dict.get(idx, 0) + (1 - self.ratio) * score
+            merged_dict[self._get_index(idx)] = merged_dict.get(self._get_index(idx), 0) + (1 - self.ratio) * score
 
         merged_items = sorted(merged_dict.items(), key=lambda x: x[1], reverse=True)[:topk]
+        
+        if not merged_items:
+            print("경고: 병합된 결과가 없습니다.")
+            return [], []
+        
         merged_indices, merged_scores = zip(*merged_items)
         
+        print(f"병합된 점수 (처음 5개): {list(merged_scores)[:5]}")
+        print(f"병합된 인덱스 (처음 5개): {list(merged_indices)[:5]}")
         return list(merged_scores), list(merged_indices)
 
     def run(self, datasets: DatasetDict, training_args: TrainingArguments, config: Dict) -> DatasetDict:

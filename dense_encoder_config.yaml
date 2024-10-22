@@ -8,7 +8,7 @@ dataset:
 seed: 42
 
 faiss:
-  use: False
+  use: True
   num_clusters: 64
 
 training:
