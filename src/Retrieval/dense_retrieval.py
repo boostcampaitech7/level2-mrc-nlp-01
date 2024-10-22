@@ -121,6 +121,7 @@ class DenseRetrieval:
 '입니다', '씨', '예', '답', '정확한' 등의 불필요한 단어를 포함하지 마세요.
 조사나 어미를 포함하지 마세요.
 답변에 같은 단어를 반복하지 마세요.
+'잘못된', '적절한' 등의 메타 단어를 포함하지 마세요.
 
 미국 대통령 미국 (X)
 미국 대통령 (O)
@@ -164,7 +165,8 @@ class DenseRetrieval:
                     answer not in question and
                     len(answer) >= 2 and
                     not re.search(r'[이가은는을를에의로으로다니습]', answer) and  # 조사와 어미 포함 여부 확인
-                    len(set(answer.split())) == len(answer.split())):  # 중복 단어 확인
+                    len(set(answer.split())) == len(answer.split()) and  # 중복 단어 확인
+                    not any(word in answer for word in ['잘못된', '적절한', '무관한'])):  # 메타 단어 확인
                     negatives.append(answer)
                     break
             else:
@@ -648,6 +650,7 @@ if __name__ == "__main__":
     
     print("Testing generate_gpt_negatives method:")
     retriever.generate_gpt_negatives(test_questions, num_negatives=2)
+
 
 
 
