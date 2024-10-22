@@ -145,7 +145,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
     if is_testing:
         datasets = use_small_datasets(datasets)
 
-    if config.dataQA.useDataset() is not None:
+    if config.dataQA.useDataset() is not None and not training_args.do_predict:
         additional_datasets = load_dataset(config.dataQA.useDataset())
         if is_testing:
             additional_datasets = use_small_datasets(additional_datasets)
