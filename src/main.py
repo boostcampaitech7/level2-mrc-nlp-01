@@ -345,7 +345,7 @@ def do_retrieval(config, training_args, logger, is_testing):
         retriever = use_dense_retrieval()
     elif config.dataRetrieval.type() == "sparse":
         retriever = SparseRetrieval(
-            tokenize_fn=AutoTokenizer.from_pretrained(config.model.name()).tokenize,
+            tokenize_fn=AutoTokenizer.from_pretrained(config.model.retriever_tokenizer()).tokenize,
             context_path=config.dataRetrieval.context_path(),
             testing=is_testing,
         )
