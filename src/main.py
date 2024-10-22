@@ -124,6 +124,7 @@ def set_hyperparameters(config, training_args):
     training_args.logging_steps = config.training.logging_steps(10) # Config.yaml에서 조절가능
     training_args.load_best_model_at_end = True
     training_args.remove_unused_columns = True
+    training_args.adam_epsilon = float(config.training.adam_eps(1e-8))
 
     return training_args
 
