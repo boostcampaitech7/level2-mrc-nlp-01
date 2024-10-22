@@ -1,5 +1,5 @@
 ## version 설명
-- 본 버전은 v3으로 v1과는 다음의 점에서 크게 다르다.
+- 본 버전은 v3으로 v2와는 다음의 점에서 크게 다르다.
   - Generation-base MRC 가 구현되었다. yaml파일에서 관련 설정을 조정할 수 있다.
   - Dense Encoder를 통한 Dense Retriever가 구현되었다. (단, 굉장히 시간이 오래 걸림)
   - streamlit 서버를 통하여 훈련데이터와 토크나이저에 따른 데이터 EDA가 구현되었다.
