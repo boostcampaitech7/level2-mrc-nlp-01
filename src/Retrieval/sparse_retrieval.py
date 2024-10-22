@@ -34,84 +34,55 @@ class SparseRetrieval:
         context_path: Optional[str] = "./data/wikipedia_documents.json",
         testing: bool = False
     ) -> NoReturn:
-
-        """
-        Arguments:
-            tokenize_fn:
-                기본 text를 tokenize해주는 함수입니다.
-                아래와 같은 함수들을 사용할 수 있습니다.
-                - lambda x: x.split(' ')
-                - Huggingface Tokenizer
-                - konlpy.tag의 Mecab
-
-            data_path:
-                데이터가 보관되어 있는 경로입니다.
-
-            context_path:
-                Passage들이 묶여있는 파일명입니다.
-
-            data_path/context_path가 존재해야합니다.
-
-        Summary:
-            Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
-        """
         self.testing = testing
         data_path = os.path.dirname(context_path)
         context_path = os.path.basename(context_path)
         self.data_path = data_path
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
-            
+
         if self.testing:
-            # 1%만 선택한다.
             total_documents = len(wiki)
             num_documents = int(0.01 * total_documents)
             wiki = {k: wiki[k] for k in list(wiki.keys())[:num_documents]}
 
-
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
-        )  # set 은 매번 순서가 바뀌므로
+        )
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
-        
 
-        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
-        self.indexer = None  # build_faiss()로 생성합니다.
-        self.bm25 = None # BM25 모델을 저장할 변수
+        self.p_embedding = None
+        self.indexer = None
+        self.bm25 = None
         self.tokenize_fn = tokenize_fn
 
     def train(self, emb_path=None):
         if emb_path is None:
+            # Fix: Use a consistent variable for embedding path
             pickle_name = f"bm25_sparse_embedding.bin"
-            emd_path = os.path.join(self.data_path, pickle_name)
+            emb_path = os.path.join(self.data_path, pickle_name)
         tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
         self.bm25 = BM25Okapi(tokenized_contexts)
-        with open(emd_path, "wb") as file:
+        # Fix: Save the BM25 model properly
+        with open(emb_path, "wb") as file:
             pickle.dump(self.bm25, file)
-            print("-----------BM25 pickle saved.", "saved at data/-----------")
+        print("-----------BM25 pickle saved.-----------")
 
     def get_sparse_embedding(self) -> NoReturn:
-
         """
-        Summary:
-            Passage Embedding을 만들고
-            TFIDF와 Embedding을 pickle로 저장합니다.
-            만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
+        BM25 Embedding을 생성하고, pickle로 저장된 것이 있으면 불러옵니다.
         """
-
-        # Pickle을 저장합니다.
         pickle_name = f"bm25_sparse_embedding.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
+        emb_path = os.path.join(self.data_path, pickle_name)
 
-        if os.path.isfile(emd_path) :
-            with open(emd_path, "rb") as file:
+        if os.path.isfile(emb_path):
+            with open(emb_path, "rb") as file:
                 self.bm25 = pickle.load(file)
             print("-----------BM25 pickle loaded.-----------")
-            print("-----------we loaded it from data/ not src-----------")
         else:
             print("Build BM25 embedding")
-            self.train(emd_path)
+            self.train(emb_path)
             
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
@@ -262,6 +233,10 @@ class SparseRetrieval:
             k (Optional[int]): 1
                 상위 몇 개의 Passage를 반환할지 정합니다.
         """
+        # self.bm25가 None인 경우 BM25 모델을 로드하거나 학습합니다.
+        if self.bm25 is None:
+            self.get_sparse_embedding()
+
         tokenized_query = self.tokenize_fn(query)
         scores = self.bm25.get_scores(tokenized_query)
         sorted_result = np.argsort(scores)[::-1]
@@ -279,10 +254,14 @@ class SparseRetrieval:
             k (Optional[int]): 1
                 상위 몇 개의 Passage를 반환할지 정합니다.
         """
+        # self.bm25가 None인 경우 BM25 모델을 로드하거나 학습합니다.
+        if self.bm25 is None:
+            self.get_sparse_embedding()
+
         doc_scores = []
         doc_indices = []
-        print('get_relevant_doc_bulk실행중 queries의 개수는 ',len(queries))
-        print('get_relevant_doc_bulk실행중 queries의 type은 ',type(queries))
+        print('get_relevant_doc_bulk 실행중 queries의 개수는 ', len(queries))
+        print('get_relevant_doc_bulk 실행중 queries의 type은 ', type(queries))
 
         for query in tqdm(queries, desc="Processing queries"):
             tokenized_query = self.tokenize_fn(query)
