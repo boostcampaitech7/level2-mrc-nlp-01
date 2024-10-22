@@ -279,6 +279,9 @@ class SparseRetrieval:
             k (Optional[int]): 1
                 상위 몇 개의 Passage를 반환할지 정합니다.
         """
+        if self.bm25 is None:
+            self.get_sparse_embedding()
+
         doc_scores = []
         doc_indices = []
         print('get_relevant_doc_bulk실행중 queries의 개수는 ',len(queries))
