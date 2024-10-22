@@ -109,6 +109,21 @@ def set_hyperparameters(config, training_args):
 
     return training_args
 
+def test_hybrid_retrieval(retriever, config):
+    print(f"Testing hybrid retrieval with initial ratio: {config.dataRetrieval.hybrid_ratio()}")
+    
+    for test_ratio in [0.3, 0.5, 0.7]:
+        temp_retriever = hybrid_1stage(
+            sparse_retriever=retriever.sparse_retriever,
+            dense_retriever=retriever.dense_retriever,
+            ratio=test_ratio,
+            context_path=config.dataRetrieval.context_path(),
+        )
+        print(f"\nTesting with ratio: {test_ratio}")
+        test_query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
+        results = temp_retriever.retrieve(test_query, topk=5)
+        print(f"Results: {results}")
+
 def main():
     config = Config()
     logger = configure_logging()
@@ -167,19 +182,20 @@ def main():
             retriever = hybrid_1stage(
                 sparse_retriever=sparse_retriever,
                 dense_retriever=dense_retriever,
-                ratio=config.dataRetrieval.hybrid_ratio(0.5),
+                ratio=config.dataRetrieval.hybrid_ratio(),
                 context_path=config.dataRetrieval.context_path(),
             )
-        
+            print(f"Initialized hybrid retriever with ratio: {config.dataRetrieval.hybrid_ratio()}")
+            # hybrid_1stage 초기화 후
+            retriever.set_ratio(config.dataRetrieval.hybrid_ratio())
+        '''
         # Hybrid retrieval 테스트
         if config.dataRetrieval.type() == "hybrid1":
-            print(f"Testing hybrid retrieval with ratio: {config.dataRetrieval.hybrid_ratio(0.5)}")
-            for ratio in [0.3, 0.5, 0.7]:
-                retriever.ratio = ratio
-                print(f"\nTesting with ratio: {ratio}")
-                test_query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
-                results = retriever.retrieve(test_query, topk=5)
-                print(f"Results: {results}")
+            test_hybrid_retrieval(retriever, config)
+        '''
+        # 실제 평가에 사용되는 retriever의 ratio 확인
+        if isinstance(retriever, hybrid_1stage):
+            print(f"Using hybrid retriever for evaluation with ratio: {retriever.ratio}")
         
         datasets = retriever.run(datasets, training_args, config)
 

@@ -17,7 +17,7 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenat
 from tqdm.auto import tqdm
 from tqdm import trange
 from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
-from sparse_retrieval import SparseRetrieval
+from .sparse_retrieval import SparseRetrieval
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config

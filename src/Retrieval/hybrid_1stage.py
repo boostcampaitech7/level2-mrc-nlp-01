@@ -3,12 +3,14 @@ import os
 import pickle
 import time
 from contextlib import contextmanager
-from typing import List, NoReturn, Optional, Tuple, Union
+from typing import List, NoReturn, Optional, Tuple, Union, Dict
 
 import numpy as np
 import pandas as pd
 from datasets import Dataset, DatasetDict, Features, Sequence, Value
 from tqdm.auto import tqdm
+from transformers import TrainingArguments
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .sparse_retrieval import SparseRetrieval
 from .dense_retrieval import DenseRetrieval
@@ -25,88 +27,98 @@ class hybrid_1stage:
         sparse_retriever: SparseRetrieval,
         dense_retriever: DenseRetrieval,
         ratio: float = 0.5,
-        context_path: Optional[str] = "wikipedia_documents.json",
+        context_path: Optional[str] = "./data/wikipedia_documents.json",
     ) -> NoReturn:
         if not 0 <= ratio <= 1:
             raise ValueError("ratio must be between 0 and 1")
-
-        """
-        Arguments:
-            sparse_retriever:
-                SparseRetrieval입니다.
-            dense_retriever:
-                DenseRetrieval입니다.
-            ratio:
-                sparse와 dense 결과의 가중치입니다. (0 <= ratio <= 1)
-            context_path:
-                Passage들이 묶여있는 파일명입니다.
-
-        Summary:
-            SparseRetrieval과 DenseRetrieval을 결합하여 사용하는 클래스입니다.
-        """
-
-        self.sparse_retriever = sparse_retriever        
+        
+        self.sparse_retriever = sparse_retriever
         self.dense_retriever = dense_retriever
-        self.sparse_retriever.get_sparse_embedding()
-        self.dense_retriever.get_dense_embedding()
         self.ratio = ratio
+        self.context_path = context_path
+        self.contexts = None
+        
+        self.load_contexts()
+        
+        # BM25 모델 초기화 확인
+        if self.sparse_retriever.bm25 is None:
+            print("Initializing BM25 model...")
+            self.sparse_retriever.get_sparse_embedding()
+        
+        # Dense 임베딩 로드 확인
+        if self.dense_retriever.p_embeddings is None:
+            print("Loading dense embeddings...")
+            self.dense_retriever.get_dense_embedding()
+        
+        print(f"Initialized hybrid_1stage with ratio: {self.ratio}")  # 로그 추가
+    
+    def load_contexts(self):
+        if self.contexts is None:
+            with open(self.context_path, "r", encoding="utf-8") as f:
+                wiki = json.load(f)
+            self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+            print(f"Loaded {len(self.contexts)} unique contexts")
 
-        data_path = os.path.dirname(context_path)
-        context_path = os.path.basename(context_path)
-        self.data_path = data_path
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
-            wiki = json.load(f)
-
-        self.contexts = list(
-            dict.fromkeys([v["text"] for v in wiki.values()])
-        )  # set 은 매번 순서가 바뀌므로
-        print(f"Lengths of unique contexts : {len(self.contexts)}")
-        self.ids = list(range(len(self.contexts)))
-
-
-    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, use_faiss: bool = False) -> Union[Tuple[List, List], pd.DataFrame]:
+    def retrieve(self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1) -> Union[Tuple[List, List], pd.DataFrame]:
+        # BM25 모델 재확인
+        if self.sparse_retriever.bm25 is None:
+            print("BM25 model is not initialized. Initializing now...")
+            self.sparse_retriever.get_sparse_embedding()
+        
+        # Dense 임베딩 재확인
+        if self.dense_retriever.p_embeddings is None:
+            print("Dense embeddings are not loaded. Loading now...")
+            self.dense_retriever.get_dense_embedding()
+        
         print(f"Hybrid retrieve called with ratio: {self.ratio}")
-        if isinstance(query_or_dataset, str):#쿼리가 1개일 떄
-            return self.retrieve_single(query_or_dataset, topk=topk, use_faiss=use_faiss)
-        elif isinstance(query_or_dataset, Dataset):#쿼리가 다수일 때
-            return self.retrieve_multi(query_or_dataset, topk=topk, use_faiss=use_faiss)
-
-    def retrieve_single(self, query: str, topk: Optional[int] = 1, use_faiss: bool = False) -> Tuple[List, List]:
-        if use_faiss:
-            sparse_scores, sparse_indices = self.sparse_retriever.retrieve_faiss(query, topk=topk)
-            dense_scores, dense_indices = self.dense_retriever.retrieve_faiss(query, topk=topk)
+        if isinstance(query_or_dataset, str):
+            return self.retrieve_single(query_or_dataset, topk=topk)
+        elif isinstance(query_or_dataset, Dataset):
+            return self.retrieve_multi(query_or_dataset, topk=topk)
         else:
-            sparse_scores, sparse_indices = self.sparse_retriever.retrieve(query, topk=topk)
-            dense_scores, dense_indices = self.dense_retriever.retrieve(query, topk=topk)
+            raise ValueError("query_or_dataset must be either str or Dataset")
+
+    def retrieve_single(self, query: str, topk: Optional[int] = 1) -> Tuple[List, List]:
+        print(f"Query: {query}")
+        sparse_scores, sparse_indices = self.sparse_retriever.get_relevant_doc(query, topk)
+        dense_scores, dense_indices = self.dense_retriever.get_relevant_doc(query, topk)
+        
+        print(f"Sparse scores: {sparse_scores}")
+        print(f"Sparse indices: {sparse_indices}")
+        print(f"Dense scores: {dense_scores}")
+        print(f"Dense indices: {dense_indices}")
         
         merged_scores, merged_indices = self._merge_results(sparse_scores, sparse_indices, dense_scores, dense_indices, topk)
         
-        return merged_scores, [self.contexts[i] for i in merged_indices]
+        print(f"Merged scores: {merged_scores}")
+        print(f"Merged indices: {merged_indices}")
+        
+        return merged_scores, merged_indices
 
-
-    def retrieve_multi(self, dataset: Dataset, topk: Optional[int] = 1, use_faiss: bool = False) -> pd.DataFrame:
+    def retrieve_multi(self, queries: Dataset, topk: Optional[int] = 1) -> pd.DataFrame:
         total = []
-        with timer("query hybrid search"):
-            for example in tqdm(dataset, desc="Hybrid retrieval: "):
-                scores, indices = self.retrieve_single(example["question"], topk=topk, use_faiss=use_faiss)
+        with tqdm(total=len(queries)) as pbar:
+            for i, query in enumerate(queries):
+                question = query['question']
+                scores, indices = self.retrieve_single(question, topk)
+                
+                context = " ".join([self.contexts[idx] for idx in indices])
                 
                 tmp = {
-                    "question": example["question"],
-                    "id": example["id"],
-                    "context": " ".join([self.contexts[i] for i in indices])
+                    "question": question,
+                    "id": query["id"],
+                    "context": context
                 }
-                if "context" in example.keys() and "answers" in example.keys():
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
+                if "answers" in query:
+                    tmp["answers"] = query["answers"]
+                
                 total.append(tmp)
+                pbar.update(1)
 
-        return pd.DataFrame(total)
+        df = pd.DataFrame(total)
+        return df
 
     def _merge_results(self, sparse_scores, sparse_indices, dense_scores, dense_indices, topk):
-        print(f"병합 결과 비율: {self.ratio}")
-        print(f"희소 점수 (처음 5개): {sparse_scores[:5]}")
-        print(f"밀집 점수 (처음 5개): {dense_scores[:5]}")
-
         merged_dict = {}
         for score, idx in zip(sparse_scores, sparse_indices):
             merged_dict[idx] = self.ratio * score
@@ -116,47 +128,57 @@ class hybrid_1stage:
         merged_items = sorted(merged_dict.items(), key=lambda x: x[1], reverse=True)[:topk]
         merged_indices, merged_scores = zip(*merged_items)
         
-        print(f"병합된 점수 (처음 5개): {list(merged_scores)[:5]}")
-        print(f"병합된 인덱스 (처음 5개): {list(merged_indices)[:5]}")
         return list(merged_scores), list(merged_indices)
 
-    def run(self, datasets, training_args, config):
-        self.sparse_retriever.get_sparse_embedding()
-        self.dense_retriever.get_dense_embedding()
-        
-        use_faiss = config.dataRetrieval.faiss.use(False)
-        if use_faiss:
-            self.sparse_retriever.build_faiss(num_clusters=config.dataRetrieval.faiss.num_clusters(64))
-            self.dense_retriever.build_faiss(num_clusters=config.dataRetrieval.faiss.num_clusters(64))
-        
-        df = self.retrieve(
-            datasets["validation"],
-            topk=config.dataRetrieval.top_k(5),
-            use_faiss=use_faiss
-        )
-        
-        if training_args.do_predict:
-            f = Features(
-                {
-                    "context": Value(dtype="string", id=None),
-                    "id": Value(dtype="string", id=None),
-                    "question": Value(dtype="string", id=None),
-                }
-            )
-        elif training_args.do_eval:
-            f = Features(
-                {
-                    "answers": Sequence(
-                        feature={
+    def run(self, datasets: DatasetDict, training_args: TrainingArguments, config: Dict) -> DatasetDict:
+        print("Starting hybrid_1stage run method")
+        if training_args.do_eval or training_args.do_predict:
+            print(f"Initial ratio: {self.ratio}")
+            self.dense_retriever.search_results_cache = None
+            self.sparse_retriever.search_results_cache = None
+
+            new_ratio = config.dataRetrieval.hybrid_ratio(0.5)
+            print(f"Config hybrid_ratio: {new_ratio}")
+            self.set_ratio(new_ratio)
+            print(f"Updated hybrid ratio to: {self.ratio}")
+            
+            top_k = config.dataRetrieval.top_k(1)
+            print(f"Config top_k: {top_k}")
+            print(f"Using hybrid ratio: {self.ratio}")
+            print(f"Using top_k: {top_k}")
+
+            for split in datasets.keys():
+                print(f"\nProcessing {split} set")
+                try:
+                    df = self.retrieve(datasets[split], topk=top_k)
+                    print(f"Retrieved {len(df)} results for {split} set")
+                    print(f"Sample results:\n{df.head()}")
+                    
+                    f = Features({
+                        "context": Value(dtype="string", id=None),
+                        "id": Value(dtype="string", id=None),
+                        "question": Value(dtype="string", id=None),
+                    })
+                    
+                    if "answers" in df.columns:
+                        f["answers"] = Sequence(feature={
                             "text": Value(dtype="string", id=None),
                             "answer_start": Value(dtype="int32", id=None),
-                        },
-                        length=-1,
-                        id=None,
-                    ),
-                    "context": Value(dtype="string", id=None),
-                }
-            )
-        
-        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+                        }, length=-1, id=None)
+
+                    datasets[split] = Dataset.from_pandas(df, features=f)
+                    print(f"Created dataset for {split} set with {len(datasets[split])} examples")
+                    print(f"Sample from new dataset:\n{datasets[split][:5]}")
+                except Exception as e:
+                    print(f"Error processing {split} set: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+
+        print("Finished hybrid_1stage run method")
         return datasets
+
+    def set_ratio(self, new_ratio: float):
+        if not 0 <= new_ratio <= 1:
+            raise ValueError("ratio must be between 0 and 1")
+        self.ratio = new_ratio
+        print(f"Ratio updated to: {self.ratio}")
