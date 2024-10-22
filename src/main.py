@@ -165,7 +165,11 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
 
     if config.peft.LoRA():
         peft_config = LoraConfig(
-            task_type=config.peft.task_type("SEQ_2_SEQ_LM"), inference_mode=config.peft.inference_mode(False), r=config.peft.r(8), lora_alpha=config.peft.lora_alpha(32), lora_dropout=config.peft.lora_dropout(0.1)
+            task_type=config.peft.task_type("SEQ_2_SEQ_LM"),
+            inference_mode=config.peft.inference_mode(False),
+            r=config.peft.r(8),
+            lora_alpha=config.peft.lora_alpha(32),
+            lora_dropout=config.peft.lora_dropout(0.1)
         )
         if training_args.do_train:
             model = get_peft_model(model, peft_config)
