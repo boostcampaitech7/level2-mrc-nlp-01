@@ -118,10 +118,10 @@ class DenseRetrieval:
 숫자나 연도를 요구하는 질문에는 다른 잘못된 숫자를 제시하세요.
 불필요한 공백이나 포맷팅 없이 명확한 단어로 작성하세요.
 영어나 특수문자를 포함하지 마세요.
-'입니다', '씨', '예', '답', '정확한' 등의 불필요한 단어를 포함하지 마세요.
+'입니다', '씨', '예', '답', '정확한', '잘못된', '적절한', '모르겠어요', '해설', '중략', '응답', '질문' 등의 불필요한 단어를 포함하지 마세요.
 조사나 어미를 포함하지 마세요.
 답변에 같은 단어를 반복하지 마세요.
-'잘못된', '적절한' 등의 메타 단어를 포함하지 마세요.
+연도나 날짜를 포함하지 마세요.
 
 미국 대통령 미국 (X)
 미국 대통령 (O)
@@ -138,12 +138,12 @@ class DenseRetrieval:
                 
                 output = model.generate(
                     input_ids, 
-                    max_new_tokens=10,
-                    num_return_sequences=1,
-                    no_repeat_ngram_size=2,
-                    do_sample=True,
-                    top_k=50,
-                    top_p=0.95,
+                    max_new_tokens=10,# 새로 생성할 최대 토큰 수
+                    num_return_sequences=1,# 몇 개의 텍스트 시퀀스를 생성할지 결정
+                    no_repeat_ngram_size=3,# 반복 방지: 같은 n-gram이 재생성되지 않도록 함 (여기서는 2-gram)
+                    do_sample=True,# 샘플링 활성화: 랜덤 선택을 통해 생성 다양성 확보
+                    top_k=50,# 상위 K개의 단어에서만 샘플링
+                    top_p=0.95,# 누적 확률이 0.95 이하인 단어 집합에서 샘플링
                     temperature=0.7,
                 )
 
@@ -153,7 +153,7 @@ class DenseRetrieval:
                 # 답변 정제
                 answer = re.sub(r'[^가-힣\s0-9]', '', answer)  # 한글과 숫자만 남기기
                 answer = ' '.join(answer.split()[:3])  # 3단어 이하로 제한
-                answer = re.sub(r'\b(질문|답변|예시|전체보기|다음|출처|참고|입니다|씨|예|답|정확한|잘못된|적절한)\b', '', answer).strip()  # 불필요한 단어 제거
+                answer = re.sub(r'\b(질문|답변|예시|전체보기|다음|출처|참고|입니다|씨|예|답|정확한|잘못된|적절한|모르겠어요|해설|중략|응답)\b', '', answer).strip()  # 불필요한 단어 제거
                 
                 # 조사와 어미 제거
                 answer = re.sub(r'(이|가|은|는|을|를|에|의|로|으로|다|니다|습니다)$', '', answer)
@@ -166,7 +166,10 @@ class DenseRetrieval:
                     len(answer) >= 2 and
                     not re.search(r'[이가은는을를에의로으로다니습]', answer) and  # 조사와 어미 포함 여부 확인
                     len(set(answer.split())) == len(answer.split()) and  # 중복 단어 확인
-                    not any(word in answer for word in ['잘못된', '적절한', '무관한'])):  # 메타 단어 확인
+                    not any(word in answer for word in ['잘못된', '적절한', '무관한', '모르겠어요']) and  # 메타 단어 확인
+                    not answer.endswith('명') and  # '명'으로 끝나는 답변 제외
+                    not re.search(r'\d+년', answer) and  # 연도 형식 제외
+                    not re.search(r'\d+월 \d+일', answer)):  # 날짜 형식 제외
                     negatives.append(answer)
                     break
             else:
@@ -650,6 +653,7 @@ if __name__ == "__main__":
     
     print("Testing generate_gpt_negatives method:")
     retriever.generate_gpt_negatives(test_questions, num_negatives=2)
+
 
 
 
