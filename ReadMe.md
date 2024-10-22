@@ -10,23 +10,25 @@
  
 
 ## CLI commnad
-    `python src/main.py --do_train`
+    python src/main.py --do_train
     
-    `python src/main.py --do_eval`
+    python src/main.py --do_eval
 
-    `python src/main.py --do_predict`
+    python src/main.py --do_predict
 
-  위 세가지 커맨드는 동일하고
+  위 세가지 커맨드는 v2와 동일하고
 
   이에 덧붙여 
     `--do_mrc` `--do_retrieval` `--do_both` 
   를 진행할 수 있는데
   
   예를 들어 아래와 같다. (리트리버 성능 평가)
-    `python src/main.py --do_retrieval --do_eval`
+  
+    python src/main.py --do_retrieval --do_eval
 
   다만, 현재 에러가 있어 아래와 같은 커맨드는 불가하다.
-    `--do_train --do_both`
+  
+    --do_train --do_both
 
 
 ## 관련 PR 모음
