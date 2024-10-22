@@ -351,10 +351,26 @@ def process_example(example, fields_to_process, char_types):
     return example
 
 
-dataset = dataset.map(
-    lambda x: process_example(
-        x,
-        fields_to_process=["title", "context", "question", "answers"],
-        char_types=["cjk_unified_ideographs"],
+def process_dataset(dataset, fields_to_process, char_types):
+    """
+    Process the dataset by removing specified character types from specified fields.
+
+    Args:
+    dataset (Dataset): The dataset to process.
+    fields_to_process (list): List of field names to process.
+    char_types (list): List of character types to remove.
+
+    Returns:
+    Dataset: The processed dataset.
+    """
+    return dataset.map(
+        lambda x: process_example(
+            x,
+            fields_to_process=fields_to_process,
+            char_types=char_types,
+        )
     )
-)
+
+
+# Usage example:
+# processed_dataset = process_dataset(dataset, ["title", "context", "question", "answers"], ["cjk_unified_ideographs"])
