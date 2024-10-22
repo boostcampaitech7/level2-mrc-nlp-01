@@ -15,7 +15,7 @@ training:
   predict_with_generate: True # If you want to generate, set True
 
 dataRetrieval:
-  type: sparse
+  type: dense
   eval: True
   context_path: ./data/wikipedia_documents.json
   top_k: 10

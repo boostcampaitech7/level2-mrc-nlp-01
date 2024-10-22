@@ -16,7 +16,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
-from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup
+from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup, GPT2LMHeadModel, GPT2TokenizerFast, PreTrainedTokenizerFast, AutoModelForCausalLM
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
@@ -100,41 +101,118 @@ class DenseRetrieval:
             )
         self.indexer = None
 
-    def prepare_in_batch_negative(self, dataset=None, num_neg=None):
-        if dataset is None:
-            dataset = self.dataset
-        if num_neg is None:
-            num_neg = self.num_negatives
+    def generate_gpt_negatives(self, questions, num_negatives=1):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        model_name = "skt/ko-gpt-trinity-1.2B-v0.5"  # 다시 원래 모델로 변경
+        model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        corpus = np.array(self.contexts)
-        p_with_neg = []
+        negatives = []
+        for question in questions:
+            prompt = f"""다음 질문에 대해 짧고 명확하게 잘못된 답변을 1개만 생성하세요. 
+답변은 반드시 완전한 문장으로 작성하고, 질문과 직접적으로 관련이 있어야 합니다. 
+잘못된 답변이지만 그럴듯하게 들리도록 만드세요. 
+예시:
+질문: 대한민국의 수도는 어디인가요?
+잘못된 답변: 대한민국의 수도는 부산입니다.
 
-        for c in dataset["context"]:
+질문: {question}
+잘못된 답변:"""
+            
+            input_ids = tokenizer.encode(prompt, return_tensors='pt').to(device)
+            
+            output = model.generate(
+                input_ids, 
+                max_new_tokens=50,  # 최대 토큰 수 증가
+                min_length=20,  # 최소 길이 설정
+                num_return_sequences=1,
+                no_repeat_ngram_size=3,
+                do_sample=True,
+                top_k=50,
+                top_p=0.95,
+                temperature=0.7,
+            )
 
-            while True:
-                neg_idxs = np.random.randint(len(corpus), size=num_neg)
+            generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+            answer = generated_text.split("잘못된 답변:")[-1].strip()
+            
+            # 첫 번째 문장만 추출하고 불필요한 기호 제거
+            answer = re.split('[.!?]', answer)[0].strip() + '.'
+            answer = re.sub(r'^[^가-힣a-zA-Z0-9]+', '', answer)
+            
+            # 답변이 비어있거나 너무 짧거나 불완전한 문장이면 다시 생성
+            attempts = 0
+            while (len(answer) < 10 or not answer.endswith(('.', '?', '!'))) and attempts < 3:
+                output = model.generate(
+                    input_ids, 
+                    max_new_tokens=50,
+                    min_length=20,
+                    num_return_sequences=1,
+                    no_repeat_ngram_size=3,
+                    do_sample=True,
+                    top_k=50,
+                    top_p=0.95,
+                    temperature=0.7,
+                )
+                generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+                answer = generated_text.split("잘못된 답변:")[-1].strip()
+                answer = re.split('[.!?]', answer)[0].strip() + '.'
+                answer = re.sub(r'^[^가-힣a-zA-Z0-9]+', '', answer)
+                attempts += 1
+            
+            if len(answer) < 10 or not answer.endswith(('.', '?', '!')):
+                answer = f"{question.split()[0]}에 대한 잘못된 답변은 알 수 없습니다."
+            
+            negatives.append(answer)
+            print(f"질문: {question}")
+            print(f"생성된 잘못된 답변: {answer}\n")
 
-                if not c in corpus[neg_idxs]:
-                    p_neg = corpus[neg_idxs]
+        return negatives
 
-                    p_with_neg.append(c)
-                    p_with_neg.extend(p_neg)
-                    break
+    def prepare_in_batch_negative(self, dataset=None, num_neg=2):
+        negative_samples_path = os.path.join(self.data_path, "negative_samples.pkl")
+        if os.path.exists(negative_samples_path):
+            print("Loading pre-generated negative samples...")
+            with open(negative_samples_path, "rb") as f:
+                p_with_neg = pickle.load(f)
+        else:
+            if dataset is None:
+                dataset = self.dataset
+            if num_neg is None:
+                num_neg = self.num_negatives
 
-        q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
-        p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length = self.max_len)
+            p_with_neg = []
 
-        p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
-        p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
-        p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+            for c, q in tqdm(zip(dataset["context"], dataset["question"]), total=len(dataset), desc="Preparing in-batch negatives"):
+                p_with_neg.append(c)
+                
+                # GPT로 네거티브 샘플 생성
+                gpt_negatives = self.generate_gpt_negatives([q], num_negatives=num_neg)
+                p_with_neg.extend(gpt_negatives)
 
-        train_dataset = TensorDataset(
-            q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
-            p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
-        )
+            print("Tokenizing questions and contexts...")
+            q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
+            p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
 
-        self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
-    
+            p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
+            p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
+            p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+
+            print("Creating TensorDataset...")
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
+                p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
+            )
+
+            print("Creating DataLoader...")
+            self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
+            print("In-batch negative preparation completed.")
+
+            # 네거티브 샘플 저장
+            with open(negative_samples_path, "wb") as f:
+                pickle.dump(p_with_neg, f)
+
     def train(self, args=None):
         if args is None:
             args = self.args
@@ -454,7 +532,7 @@ class DenseRetrieval:
             D_list.extend(D.tolist())
             I_list.extend(I.tolist())
 
-            # GPU 메모리 정리
+            # GPU 메모리 리
             torch.cuda.empty_cache()
 
         return D_list, I_list
@@ -555,3 +633,25 @@ if __name__ == "__main__":
 
         with timer("single query by exhaustive search"):
             scores, indices = retriever.retrieve(query, topk=1)
+
+    # 시험적으로 generate_gpt_negatives 메서드 테스트
+    test_questions = [
+        "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?",
+        "한국의 수도는 어디인가요?"
+    ]
+    
+    print("Testing generate_gpt_negatives method:")
+    retriever.generate_gpt_negatives(test_questions, num_negatives=2)
+
+
+
+
+
+
+
+
+
+
+
+
+
