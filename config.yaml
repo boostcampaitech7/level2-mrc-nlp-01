@@ -1,5 +1,6 @@
 model:
   name: klue/bert-base
+  retriever_tokenizer: Dongjin-kr/ko-reranker
 
 seed: 2024
 
