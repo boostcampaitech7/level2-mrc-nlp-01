@@ -31,6 +31,7 @@ import wandb
 import yaml
 from datetime import datetime
 import pytz
+from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -102,7 +103,10 @@ def use_proper_model(config, training_args):
     if training_args.do_train:
         return config.model.name()
     elif training_args.do_eval or training_args.do_predict:
-        return config.output.model('./models/train_dataset')
+        if config.peft.LoRA():
+            return config.model.name()
+        else:
+            return config.output.model('./models/train_dataset')
 
 def set_hyperparameters(config, training_args):
     training_args.num_train_epochs = config.training.epochs()
@@ -154,8 +158,25 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config_hf)
     else:
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
+    
+    # 모델 구조 확인 - target_modules 를 모를시 사용
+    # for name, module in model.named_modules():
+    #     print(name)
+
+    if config.peft.LoRA():
+        peft_config = LoraConfig(
+            task_type="SEQ_2_SEQ_LM", inference_mode=config.peft.inference_mode(False), r=config.peft.r(8), lora_alpha=config.peft.lora_alpha(32), lora_dropout=config.peft.lora_dropout(0.1)
+        )
+        if training_args.do_train:
+            model = get_peft_model(model, peft_config)
+            print("Get peft model!")
+        else:
+            model = PeftModel.from_pretrained(model, config.output.model('./models/train_dataset'))
+            print("Get pre-trained peft model!")
+        model.print_trainable_parameters()
 
     wandb.watch(model)
+
     # 최소 하나의 행동(do_train, do_eval, do_predict)을 해야 함
     if not (training_args.do_train or training_args.do_eval or training_args.do_predict):
         return logger.info('Neither training, evaluation, nor prediction is enabled.')
@@ -275,6 +296,8 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
+        if config.peft.LoRA():
+            model.save_pretrained(config.output.model())
 
     # Prediction
     if training_args.do_predict:
