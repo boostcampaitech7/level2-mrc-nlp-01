@@ -1,18 +1,26 @@
 model:
-  name: klue/bert-base
+  name: paust/pko-t5-large
 
 seed: 2024
 
 training:
   epochs: 3 # HF default = 3
-  batch_size: 16 # HF default = 8
+  batch_size: 8 # HF default = 8
   learning_rate: 5e-5 # HF default = 5e-5
   optimizer: AdamW # HF default = AdamW
   loss: L1loss # Not Implementedd
   shuffle: True # Not Implemented
-  weight_decay: 0.01 # HF default = 0.0
-  scheduler: cosine # HF default = "linear"
-  predict_with_generate: False # If you want to generate, set True
+  weight_decay: 0 # HF default = 0.0
+  scheduler: linear # HF default = "linear"
+  predict_with_generate: True # If you want to generate, set True
+  logging_steps: 10
+
+peft:
+  LoRA: True # If you want to apply LoRA, set True
+  inference: False # default = False
+  r: 8 # default = 8
+  lora_alpha: 32 # default = 32
+  lora_dropout: 0.1 # default = 0.1
 
 dataRetrieval:
   type: sparse
@@ -20,7 +28,7 @@ dataRetrieval:
   context_path: ./data/wikipedia_documents.json
   top_k: 10
   faiss:
-    use: False
+    use: True
     num_clusters: 64
 
 dataQA:
@@ -29,7 +37,7 @@ dataQA:
     test: ./data/test_dataset
   tokenizer:
     max_seq_length: 384
-    max_answer_length: 30
+    max_answer_length: 64
     doc_stride: 128
     pad_to_max_length: True
     preprocessing_num_workers: null
