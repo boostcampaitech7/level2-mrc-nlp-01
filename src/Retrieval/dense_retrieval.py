@@ -5,6 +5,7 @@ import pickle
 import time
 from contextlib import contextmanager
 from typing import List, NoReturn, Optional, Tuple, Union
+from datetime import datetime
 
 import faiss
 import numpy as np
@@ -104,69 +105,74 @@ class DenseRetrieval:
     def generate_gpt_negatives(self, questions, num_negatives=1):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        model_name = "skt/ko-gpt-trinity-1.2B-v0.5"  # 다시 원래 모델로 변경
+        model_name = "skt/ko-gpt-trinity-1.2B-v0.5"
         model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         negatives = []
         for question in questions:
-            prompt = f"""다음 질문에 대해 짧고 명확하게 잘못된 답변을 1개만 생성하세요. 
-답변은 반드시 완전한 문장으로 작성하고, 질문과 직접적으로 관련이 있어야 합니다. 
-잘못된 답변이지만 그럴듯하게 들리도록 만드세요. 
-예시:
-질문: 대한민국의 수도는 어디인가요?
-잘못된 답변: 대한민국의 수도는 부산입니다.
+            prompt = f"""다음 질문에 대해 짧고 명확하게 잘못된 명사형 답변을 1-3개의 단어로 생성하세요. 
+답변은 질문과 주제적으로 연관은 있지만, 절대 정답이 아니어야 합니다.
+질문에 사용된 단어를 그대로 반복하지 마세요.
+답변은 명사형이어야 하며, 문장이나 구문 형태가 아닌 단어로만 작성하세요.
+숫자나 연도를 요구하는 질문에는 다른 잘못된 숫자를 제시하세요.
+불필요한 공백이나 포맷팅 없이 명확한 단어로 작성하세요.
+영어나 특수문자를 포함하지 마세요.
+'입니다', '씨', '예', '답', '정확한' 등의 불필요한 단어를 포함하지 마세요.
+조사나 어미를 포함하지 마세요.
+답변에 같은 단어를 반복하지 마세요.
+
+미국 대통령 미국 (X)
+미국 대통령 (O)
 
 질문: {question}
 잘못된 답변:"""
             
-            input_ids = tokenizer.encode(prompt, return_tensors='pt').to(device)
+            keywords = set(question.split())
+            important_keywords = [w for w in keywords if len(w) > 1 and w.lower() not in ['무엇', '어디', '누구', '언제', '어떤', '몇', '위해', '쓰여졌는가', '있었는가', '죽었나', '인가', '은', '는', '이', '가']]
             
-            output = model.generate(
-                input_ids, 
-                max_new_tokens=50,  # 최대 토큰 수 증가
-                min_length=20,  # 최소 길이 설정
-                num_return_sequences=1,
-                no_repeat_ngram_size=3,
-                do_sample=True,
-                top_k=50,
-                top_p=0.95,
-                temperature=0.7,
-            )
-
-            generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-            answer = generated_text.split("잘못된 답변:")[-1].strip()
-            
-            # 첫 번째 문장만 추출하고 불필요한 기호 제거
-            answer = re.split('[.!?]', answer)[0].strip() + '.'
-            answer = re.sub(r'^[^가-힣a-zA-Z0-9]+', '', answer)
-            
-            # 답변이 비어있거나 너무 짧거나 불완전한 문장이면 다시 생성
-            attempts = 0
-            while (len(answer) < 10 or not answer.endswith(('.', '?', '!'))) and attempts < 3:
+            max_attempts = 15
+            for _ in range(max_attempts):
+                input_ids = tokenizer.encode(prompt, return_tensors='pt').to(device)
+                
                 output = model.generate(
                     input_ids, 
-                    max_new_tokens=50,
-                    min_length=20,
+                    max_new_tokens=10,
                     num_return_sequences=1,
-                    no_repeat_ngram_size=3,
+                    no_repeat_ngram_size=2,
                     do_sample=True,
                     top_k=50,
                     top_p=0.95,
                     temperature=0.7,
                 )
+
                 generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
                 answer = generated_text.split("잘못된 답변:")[-1].strip()
-                answer = re.split('[.!?]', answer)[0].strip() + '.'
-                answer = re.sub(r'^[^가-힣a-zA-Z0-9]+', '', answer)
-                attempts += 1
+                
+                # 답변 정제
+                answer = re.sub(r'[^가-힣\s0-9]', '', answer)  # 한글과 숫자만 남기기
+                answer = ' '.join(answer.split()[:3])  # 3단어 이하로 제한
+                answer = re.sub(r'\b(질문|답변|예시|전체보기|다음|출처|참고|입니다|씨|예|답|정확한|잘못된|적절한)\b', '', answer).strip()  # 불필요한 단어 제거
+                
+                # 조사와 어미 제거
+                answer = re.sub(r'(이|가|은|는|을|를|에|의|로|으로|다|니다|습니다)$', '', answer)
+                
+                # 답변 검증
+                if (len(answer.split()) >= 1 and 
+                    len(answer.split()) <= 3 and 
+                    not any(keyword in answer for keyword in important_keywords) and 
+                    answer not in question and
+                    len(answer) >= 2 and
+                    not re.search(r'[이가은는을를에의로으로다니습]', answer) and  # 조사와 어미 포함 여부 확인
+                    len(set(answer.split())) == len(answer.split())):  # 중복 단어 확인
+                    negatives.append(answer)
+                    break
+            else:
+                # 모든 시도 후에도 적절한 답변을 생성하지 못한 경우
+                negatives.append("무관한 답변")
             
-            if len(answer) < 10 or not answer.endswith(('.', '?', '!')):
-                answer = f"{question.split()[0]}에 대한 잘못된 답변은 알 수 없습니다."
-            
-            negatives.append(answer)
             print(f"질문: {question}")
-            print(f"생성된 잘못된 답변: {answer}\n")
+            print(f"생성된 잘못된 답변: {negatives[-1]}\n")
 
         return negatives
 
@@ -532,7 +538,7 @@ class DenseRetrieval:
             D_list.extend(D.tolist())
             I_list.extend(I.tolist())
 
-            # GPU 메모리 리
+            # GPU 메리 리
             torch.cuda.empty_cache()
 
         return D_list, I_list
@@ -642,14 +648,6 @@ if __name__ == "__main__":
     
     print("Testing generate_gpt_negatives method:")
     retriever.generate_gpt_negatives(test_questions, num_negatives=2)
-
-
-
-
-
-
-
-
 
 
 
