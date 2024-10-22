@@ -10,9 +10,18 @@ training:
   optimizer: AdamW # HF default = AdamW
   loss: L1loss # Not Implementedd
   shuffle: True # Not Implemented
-  weight_decay: 0.01 # HF default = 0.0
-  scheduler: cosine # HF default = "linear"
+  weight_decay: 0 # HF default = 0.0
+  scheduler: linear # HF default = "linear"
   predict_with_generate: False # If you want to generate, set True
+  logging_steps: 10
+
+peft:
+  LoRA: False # If you want to apply LoRA, set True
+  task_type: SEQ_2_SEQ_LM
+  inference: False # default = False
+  r: 8 # default = 8
+  lora_alpha: 32 # default = 32
+  lora_dropout: 0.1 # default = 0.1
 
 dataRetrieval:
   type: sparse
@@ -29,7 +38,7 @@ dataQA:
     test: ./data/test_dataset
   tokenizer:
     max_seq_length: 384
-    max_answer_length: 30
+    max_answer_length: 64
     doc_stride: 128
     pad_to_max_length: True
     preprocessing_num_workers: null
