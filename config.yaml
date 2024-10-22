@@ -15,6 +15,7 @@ training:
   scheduler: linear # HF default = "linear"
   predict_with_generate: False # If you want to generate, set True
   logging_steps: 10
+  adam_eps: 1e-8
 
 peft:
   LoRA: False # If you want to apply LoRA, set True
