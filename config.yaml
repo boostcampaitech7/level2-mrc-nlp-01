@@ -17,6 +17,7 @@ training:
 
 peft:
   LoRA: False # If you want to apply LoRA, set True
+  task_type: SEQ_2_SEQ_LM
   inference: False # default = False
   r: 8 # default = 8
   lora_alpha: 32 # default = 32
