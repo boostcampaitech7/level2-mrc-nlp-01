@@ -1,27 +1,44 @@
 ## version 설명
-- 본 버전은 v2.0.0으로 v1.1.0과는 다음의 점에서 크게 다르다.
-  - Dense retriever가 추가되었다. config.yaml에서 dense로 설정하면 실행시 dense_retriever로 실행된다.
-  - Sparse retriever 관련하여 TF-IDF 가 아닌, BM25를 활용한다.
-  - train.py와 inference.py를 통합하여 main.py로 옮겼다.
-  - 덜 구현된 하이퍼 파라미터들을 training_args로 받아 제대로 적용시켰다.
-  - EDA 관련 server를 하나 개설했고 해당 서버는 streamlit으로 구현되어 QA 관련 데이터셋을 시각화 및 분석할 수 있도록 하였다.
-  - 실험 편이성과 에러 방지를 위해 기존 CLI commnad 를 다음 셋으로 간략화했다.
-    
+- 본 버전은 v3으로 v1과는 다음의 점에서 크게 다르다.
+  - Generation-base MRC 가 구현되었다. yaml파일에서 관련 설정을 조정할 수 있다.
+  - Dense Encoder를 통한 Dense Retriever가 구현되었다. (단, 굉장히 시간이 오래 걸림)
+  - streamlit 서버를 통하여 훈련데이터와 토크나이저에 따른 데이터 EDA가 구현되었다.
+  - Evaluation을 진행함에 있어서 기존에 Reader에 대한 성능평가만이 이루어진 것을 수정하여 Retriever를 통해 넘겨 받은 후 Reader가 평가받을 수 있도록 하였다. (Retriever 성능 반영)
+  - Cross Encdoer를 추가하였다.
+  - bert Encoder 외에 RoBERTa Encoder 또한 동작할 수 있도록 추가하였다.
+  - WandB 실험 로깅 기능을 추가하였다.
+ 
+
+## CLI commnad
     `python src/main.py --do_train`
     
     `python src/main.py --do_eval`
 
     `python src/main.py --do_predict`
 
+  위 세가지 커맨드는 동일하고
+
+  이에 덧붙여 
+    `--do_mrc` `--do_retrieval` `--do_both` 
+  를 진행할 수 있는데
+  
+  예를 들어 아래와 같다. (리트리버 성능 평가)
+    `python src/main.py --do_retrieval --do_eval`
+
+  다만, 현재 에러가 있어 아래와 같은 커맨드는 불가하다.
+    `--do_train --do_both`
+
 
 ## 관련 PR 모음
-* feat: TF-IDF를 이용한 Sparse Retrieval의 성능 측정 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/22
-* fix : top_k 설정 안 되던 버그 수정 by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/27
-* Feat : change TF-IDF to BM25 by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/23
-* refactor: streamlit 폴더 구조 개편 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/30
-* refactor: config 사용법 정상화 by @rasauq1122 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/33
-* Refactor/Feat: CLI 커맨드 통일화 및 train.py 와 inference.py를 main.py로 합침. by @hskhyl in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/29
-* Feat: Dense Retrieval 구현 by @Now100 in https://github.com/boostcampaitech7/level2-mrc-nlp-01/pull/35
-
-
-**Full Changelog**: https://github.com/boostcampaitech7/level2-mrc-nlp-01/compare/v1.1.0...v2.0.0
+- Feat: Generation-based MRC 구현 by @swbaek97 in #37
+- Refactor: dense encoder 설정 변경 by @Now100 in #38
+- Feature: streamlit에서 context의 어떤 부분이 UNK 토큰인지 확인할 수 있도록 추가 by @rasauq1122 in #40
+- feat: negative sampling 변경 by @Now100 in #44
+- fix: Fix negative sampling storage in dense retrieval by @Now100 in #46
+- feat: BM25 성능 검증 by @rasauq1122 in #45
+- Fix: Evaluation error during generation model training by @swbaek97 in #52
+- feat: evaluation시 retriever와 연동해서 진행할 수 있습니다. by @rasauq1122 in #59
+- feat: Cross Encoder 추가 by @rasauq1122 in #51
+- Feat: RoBERTa Encoder 추가 & Mixed Precision 추가 by @Now100 in #53
+- Feat: EDA streamlit 서버 관련하여 기능추가 (데이터셋 길이 보기, 토크나이저에 따른 데이터 EDA) by @hskhyl in #55
+- Feat: wandb logging 코드 추가 by @hskhyl in #57
