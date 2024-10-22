@@ -5,17 +5,18 @@ model:
 seed: 2024
 
 training:
-  epochs: 5 # HF default = 3
-  batch_size: 16 # HF default = 8
-  learning_rate: 5e-5 # HF default = 5e-5
-  optimizer: AdamW # HF default = AdamW
-  loss: L1loss # Not Implementedd
-  shuffle: True # Not Implemented
-  weight_decay: 0 # HF default = 0.0
-  scheduler: linear # HF default = "linear"
+  epochs: 3 # HF default = 3
+  batch_size: 32 # HF default = 8
+  learning_rate: 2e-5 # HF default = 5e-5
+  # optimizer: AdamW # HF default = AdamW 반영 안 되고 있으나 기본적으로 adamW이기에 상관 X
+  # loss: L1loss # Not Implementedd
+  # shuffle: True # Not Implemented # Trainer는 DataLoader 생성시 자동으로 shuffle해준다.
+  weight_decay: 0.01 # HF default = 0.0
+  scheduler: cosine # HF default = "linear"
   predict_with_generate: False # If you want to generate, set True
   logging_steps: 10
   adam_eps: 1e-8
+  max_grad_norm: 2.0
 
 peft:
   LoRA: False # If you want to apply LoRA, set True
@@ -44,7 +45,7 @@ dataQA:
     max_answer_length: 64
     doc_stride: 128
     pad_to_max_length: True
-    preprocessing_num_workers: null
+    preprocessing_num_workers: 6
     overwrite_cache: False
   generation:
     num_beams: 3
