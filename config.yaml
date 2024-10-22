@@ -20,7 +20,7 @@ dataRetrieval:
   data_path: "/data/ephemeral/home/ksw/level2-mrc-nlp-01/data"
   context_path: ./data/wikipedia_documents.json
   top_k: 10
-  hybrid_ratio: 0.7
+  hybrid_ratio: 0.4
   faiss:
     use: False
     num_clusters: 64
