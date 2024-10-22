@@ -25,6 +25,7 @@ from QuestionAnswering.tokenizer_wrapper import QuestionAnsweringTokenizerWrappe
 from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from Retrieval.cross_encoder import CrossDenseRetrieval
+from Retrieval.hybrid_retriever import HybridRetriever
 from dataclasses import dataclass, field
 import nltk
 import wandb
@@ -326,6 +327,15 @@ def do_retrieval(config, training_args, logger, is_testing):
             context_path=config.dataRetrieval.context_path(),
             testing=is_testing,
         )
+    elif config.dataRetrieval.type() == "hybrid":
+        dense_retriever = use_dense_retrieval()
+        sparse_retriever = SparseRetrieval(
+            tokenize_fn=AutoTokenizer.from_pretrained(config.model.name()).tokenize,
+            context_path=config.dataRetrieval.context_path(),
+            testing=is_testing,
+        )
+        retriever = HybridRetriever(dense_retriever, sparse_retriever)
+    
     if training_args.do_train:
         retriever.train()
     

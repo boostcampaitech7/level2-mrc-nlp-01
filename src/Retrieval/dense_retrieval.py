@@ -111,12 +111,20 @@ class DenseRetrieval:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModel.from_pretrained(self.model_name)
 
-        if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
-            self.p_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
-            self.q_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
-        else:  # BERT 또는 다른 모델의 경우 기본적으로 BertEncoder 사용
-            self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
-            self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+        if os.path.exists(os.path.join(self.data_path, "p_encoder")) and os.path.exists(os.path.join(self.data_path, "q_encoder")):
+            if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+                self.p_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                self.q_encoder = RoBERTaEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+            else:
+                self.p_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "p_encoder")).to(self.device)
+                self.q_encoder = BertEncoder.from_pretrained(os.path.join(self.data_path, "q_encoder")).to(self.device)
+        else:
+            if 'roberta' in self.model_name.lower() or 'roberta' in self.model.config.model_type.lower():
+                self.p_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+                self.q_encoder = RoBERTaEncoder.from_pretrained(self.model_name).to(self.device)
+            else:  # BERT 또는 다른 모델의 경우 기본적으로 BertEncoder 사용
+                self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+                self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
 
         self.p_embeddings = None
 
@@ -412,6 +420,9 @@ class DenseRetrieval:
             Tuple[List[List[float]], List[List[int]]]:
                 각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
         """
+
+        if self.p_embeddings is None:
+            self.get_dense_embedding()
 
         self.q_encoder.eval()
         self.q_encoder.to(self.device)
