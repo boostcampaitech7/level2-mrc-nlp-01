@@ -1,22 +1,22 @@
 model:
-  name: paust/pko-t5-large
+  name: klue/bert-base
 
 seed: 2024
 
 training:
   epochs: 3 # HF default = 3
-  batch_size: 8 # HF default = 8
+  batch_size: 16 # HF default = 8
   learning_rate: 5e-5 # HF default = 5e-5
   optimizer: AdamW # HF default = AdamW
   loss: L1loss # Not Implementedd
   shuffle: True # Not Implemented
   weight_decay: 0 # HF default = 0.0
   scheduler: linear # HF default = "linear"
-  predict_with_generate: True # If you want to generate, set True
+  predict_with_generate: False # If you want to generate, set True
   logging_steps: 10
 
 peft:
-  LoRA: True # If you want to apply LoRA, set True
+  LoRA: False # If you want to apply LoRA, set True
   inference: False # default = False
   r: 8 # default = 8
   lora_alpha: 32 # default = 32
