@@ -344,6 +344,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
 def do_retrieval(config, training_args, logger, is_testing):
     if config.dataRetrieval.type() == "dense":
         retriever = use_dense_retrieval()
+        retriever.args.use_tfidf_negative_sampling = config.training.use_tfidf_negative_sampling
     elif config.dataRetrieval.type() == "sparse":
         retriever = SparseRetrieval(
             tokenize_fn=AutoTokenizer.from_pretrained(config.model.retriever_tokenizer()).tokenize,
@@ -462,3 +463,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

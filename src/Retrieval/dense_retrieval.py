@@ -17,6 +17,8 @@ from torch.cuda.amp import GradScaler ,autocast
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenate_datasets, load_from_disk
 from tqdm.auto import tqdm
 from tqdm import trange
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from transformers import (
     AutoModel, AutoTokenizer, TrainingArguments, 
@@ -139,6 +141,26 @@ class DenseRetrieval:
             )
         self.grad_scaler = GradScaler()
         self.indexer = None
+        self.use_tfidf_negative_sampling = config.training.use_tfidf_negative_sampling()
+        self.tfidf_vectorizer = TfidfVectorizer()
+        self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(self.contexts)
+
+    def generate_tfidf_negatives(self, contexts, num_negatives=1, similarity_threshold=0.3):
+        negatives = []
+        
+        for context in contexts:
+            context_vector = self.tfidf_vectorizer.transform([context])
+            similarities = cosine_similarity(context_vector, self.tfidf_matrix).flatten()
+            
+            candidate_indices = np.where((similarities >= similarity_threshold) & (similarities < 1.0))[0]
+            
+            if len(candidate_indices) < num_negatives:
+                candidate_indices = np.argsort(similarities)[::-1][1:num_negatives+1]
+            
+            selected_indices = np.random.choice(candidate_indices, num_negatives, replace=False)
+            negatives.extend([self.contexts[i] for i in selected_indices])
+        
+        return negatives
 
     def prepare_in_batch_negative(self, dataset=None, num_neg=None):
         if dataset is None:
@@ -187,6 +209,41 @@ class DenseRetrieval:
             )
 
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
+        torch.cuda.empty_cache()
+
+    def prepare_in_batch_negative_tfidf(self, dataset=None, num_neg=None):
+        if dataset is None:
+            dataset = self.dataset
+        if num_neg is None:
+            num_neg = self.num_negatives
+
+        p_with_neg = []
+
+        for context in tqdm(dataset["context"], desc="Prepare in-batch negatives (TF-IDF)"):
+            negatives = self.generate_tfidf_negatives([context], num_negatives=num_neg)
+            p_with_neg.extend([context] + negatives)
+
+        q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
+        p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
+
+        p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
+        p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
+        if 'token_type_ids' in p_seqs:
+            p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
+
+        if 'token_type_ids' in p_seqs:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
+                p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
+            )
+        else:
+            train_dataset = TensorDataset(
+                q_seqs['input_ids'], q_seqs['attention_mask'],
+                p_seqs['input_ids'], p_seqs['attention_mask'],
+            )
+
+        self.train_dataloader = DataLoader(train_dataset, batch_size=self.args.per_device_train_batch_size, shuffle=True)
+        torch.cuda.empty_cache()
 
     def train(self, args=None):
         if args is None:
@@ -196,7 +253,10 @@ class DenseRetrieval:
 
         batch_size = args.per_device_train_batch_size
 
-        self.prepare_in_batch_negative()
+        if self.use_tfidf_negative_sampling:
+            self.prepare_in_batch_negative_tfidf()
+        else:
+            self.prepare_in_batch_negative()
 
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
@@ -620,3 +680,10 @@ if __name__ == "__main__":
 
         with timer("single query by exhaustive search"):
             scores, indices = retriever.retrieve(query, topk=5)
+
+
+
+
+
+
+

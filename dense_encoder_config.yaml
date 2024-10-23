@@ -20,3 +20,4 @@ training:
   gradient_accumulation_steps: 8
   num_negative: 8
   weight_decay: 0.01
+  use_tfidf_negative_sampling: False  # TF-IDF 기반 네거티브 샘플링 사용 여부
