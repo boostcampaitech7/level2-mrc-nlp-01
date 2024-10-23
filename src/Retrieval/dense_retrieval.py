@@ -19,9 +19,13 @@ from tqdm.auto import tqdm
 from tqdm import trange
 from transformers import AutoModel, AutoTokenizer, TrainingArguments, BertModel, BertPreTrainedModel, AdamW, get_linear_schedule_with_warmup, GPT2LMHeadModel, GPT2TokenizerFast, PreTrainedTokenizerFast, AutoModelForCausalLM
 import re
+import logging
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -86,6 +90,12 @@ class DenseRetrieval:
         
         self.model_name = self.config.model.name()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        print(f"Padding token: {self.tokenizer.pad_token}")
+        print(f"Padding token ID: {self.tokenizer.pad_token_id}")
+        
         self.model = AutoModel.from_pretrained(self.model_name)
         self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
         self.q_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
@@ -101,83 +111,80 @@ class DenseRetrieval:
             weight_decay=self.config.training.weight_decay(),
             )
         self.indexer = None
-
-    def generate_gpt_negatives(self, questions, num_negatives=1):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        model_name = "skt/ko-gpt-trinity-1.2B-v0.5"
-        model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-
+    def generate_gpt_negatives(self, contexts, num_negatives=1, batch_size=1):
+        model_name = "skt/kogpt2-base-v2"
+        tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=1024)
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+        
+        device = torch.device("cpu")
+        model = model.to(device)
+        
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        
+        max_length = 512  # 최대 길이를 512로 제한
         negatives = []
-        for question in questions:
-            prompt = f"""다음 질문에 대해 짧고 명확하게 잘못된 명사형 답변을 1-3개의 단어로 생성하세요. 
-답변은 질문과 주제적으로 연관은 있지만, 절대 정답이 아니어야 합니다.
-질문에 사용된 단어를 그대로 반복하지 마세요.
-답변은 명사형이어야 하며, 문장이나 구문 형태가 아닌 단어로만 작성하세요.
-숫자나 연도를 요구하는 질문에는 다른 잘못된 숫자를 제시하세요.
-불필요한 공백이나 포맷팅 없이 명확한 단어로 작성하세요.
-영어나 특수문자를 포함하지 마세요.
-'입니다', '씨', '예', '답', '정확한', '잘못된', '적절한', '모르겠어요', '해설', '중략', '응답', '질문' 등의 불필요한 단어를 포함하지 마세요.
-조사나 어미를 포함하지 마세요.
-답변에 같은 단어를 반복하지 마세요.
-연도나 날짜를 포함하지 마세요.
 
-미국 대통령 미국 (X)
-미국 대통령 (O)
+        for i in range(0, len(contexts), batch_size):
+            batch_contexts = contexts[i:i+batch_size]
+            batch_prompts = []
+            
+            for context in batch_contexts:
+                tokenized_context = tokenizer.encode(context, truncation=True, max_length=max_length)
+                truncated_context = tokenizer.decode(tokenized_context)
+                prompt = f"""다음은 원본 문단의 내용을 변경한 거짓 정보입니다. 원본 문단의 주제와 관련된 내용을 유지하면서 사실을 변경하세요:
 
-질문: {question}
-잘못된 답변:"""
-            
-            keywords = set(question.split())
-            important_keywords = [w for w in keywords if len(w) > 1 and w.lower() not in ['무엇', '어디', '누구', '언제', '어떤', '몇', '위해', '쓰여졌는가', '있었는가', '죽었나', '인가', '은', '는', '이', '가']]
-            
-            max_attempts = 15
-            for _ in range(max_attempts):
-                input_ids = tokenizer.encode(prompt, return_tensors='pt').to(device)
-                
-                output = model.generate(
-                    input_ids, 
-                    max_new_tokens=10,# 새로 생성할 최대 토큰 수
-                    num_return_sequences=1,# 몇 개의 텍스트 시퀀스를 생성할지 결정
-                    no_repeat_ngram_size=3,# 반복 방지: 같은 n-gram이 재생성되지 않도록 함 (여기서는 2-gram)
-                    do_sample=True,# 샘플링 활성화: 랜덤 선택을 통해 생성 다양성 확보
-                    top_k=50,# 상위 K개의 단어에서만 샘플링
-                    top_p=0.95,# 누적 확률이 0.95 이하인 단어 집합에서 샘플링
-                    temperature=0.7,
-                )
+원본 문단: {truncated_context}
 
-                generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-                answer = generated_text.split("잘못된 답변:")[-1].strip()
-                
-                # 답변 정제
-                answer = re.sub(r'[^가-힣\s0-9]', '', answer)  # 한글과 숫자만 남기기
-                answer = ' '.join(answer.split()[:3])  # 3단어 이하로 제한
-                answer = re.sub(r'\b(질문|답변|예시|전체보기|다음|출처|참고|입니다|씨|예|답|정확한|잘못된|적절한|모르겠어요|해설|중략|응답)\b', '', answer).strip()  # 불필요한 단어 제거
-                
-                # 조사와 어미 제거
-                answer = re.sub(r'(이|가|은|는|을|를|에|의|로|으로|다|니다|습니다)$', '', answer)
-                
-                # 답변 검증
-                if (len(answer.split()) >= 1 and 
-                    len(answer.split()) <= 3 and 
-                    not any(keyword in answer for keyword in important_keywords) and 
-                    answer not in question and
-                    len(answer) >= 2 and
-                    not re.search(r'[이가은는을를에의로으로다니습]', answer) and  # 조사와 어미 포함 여부 확인
-                    len(set(answer.split())) == len(answer.split()) and  # 중복 단어 확인
-                    not any(word in answer for word in ['잘못된', '적절한', '무관한', '모르겠어요']) and  # 메타 단어 확인
-                    not answer.endswith('명') and  # '명'으로 끝나는 답변 제외
-                    not re.search(r'\d+년', answer) and  # 연도 형식 제외
-                    not re.search(r'\d+월 \d+일', answer)):  # 날짜 형식 제외
-                    negatives.append(answer)
-                    break
-            else:
-                # 모든 시도 후에도 적절한 답변을 생성하지 못한 경우
-                negatives.append("무관한 답변")
+변경된 문단:"""
+                batch_prompts.append(prompt)
+
+            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
             
-            print(f"질문: {question}")
-            print(f"생성된 잘못된 답변: {negatives[-1]}\n")
+            # token_type_ids 제거
+            if 'token_type_ids' in inputs:
+                del inputs['token_type_ids']
+            
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            logger.info(f"Input shape: {inputs['input_ids'].shape}")
+            
+            with torch.no_grad():
+                try:
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=300,
+                        num_return_sequences=1,
+                        no_repeat_ngram_size=2,
+                        do_sample=True, 
+                        temperature=0.7,
+                        top_k=50,
+                        top_p=0.95,
+                    )
+                    
+                    logger.info(f"Output shape: {outputs.shape}")
+                    
+                except RuntimeError as e:
+                    logger.error(f"Error during generation: {e}")
+                    continue
+
+            for j, output in enumerate(outputs):
+                generated_text = tokenizer.decode(output, skip_special_tokens=True)
+                split_text = generated_text.split("변경된 문단:")
+                if len(split_text) > 1:
+                    modified_context = split_text[-1].strip()
+                else:
+                    modified_context = generated_text.strip()
+                
+                if modified_context:
+                    negatives.append(modified_context)
+                    logger.info(f"Successfully generated negative for context.")
+                    logger.info(f"Original context: {batch_contexts[j]}")
+                    logger.info(f"Generated negative: {modified_context}")
+                else:
+                    logger.warning(f"Generated text is empty. Using original context.")
+                    negatives.append(batch_contexts[j])
 
         return negatives
 
@@ -195,24 +202,24 @@ class DenseRetrieval:
 
             p_with_neg = []
 
-            for c, q in tqdm(zip(dataset["context"], dataset["question"]), total=len(dataset), desc="Preparing in-batch negatives"):
+            for c in tqdm(dataset["context"], total=len(dataset), desc="Preparing in-batch negatives"):
                 p_with_neg.append(c)
                 
                 # GPT로 네거티브 샘플 생성
-                gpt_negatives = self.generate_gpt_negatives([q], num_negatives=num_neg)
+                gpt_negatives = self.generate_gpt_negatives([c], num_negatives=num_neg)
                 p_with_neg.extend(gpt_negatives)
 
-            print("Tokenizing questions and contexts...")
-            q_seqs = self.tokenizer(dataset["question"], padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
+            print("Tokenizing contexts...")
             p_seqs = self.tokenizer(p_with_neg, padding="max_length", truncation=True, return_tensors='pt', max_length=self.max_len)
-
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             p_seqs['input_ids'] = p_seqs['input_ids'].view(-1, num_neg+1, self.max_len)
             p_seqs['attention_mask'] = p_seqs['attention_mask'].view(-1, num_neg+1, self.max_len)
             p_seqs['token_type_ids'] = p_seqs['token_type_ids'].view(-1, num_neg+1, self.max_len)
 
             print("Creating TensorDataset...")
             train_dataset = TensorDataset(
-                q_seqs['input_ids'], q_seqs['attention_mask'], q_seqs['token_type_ids'],
                 p_seqs['input_ids'], p_seqs['attention_mask'], p_seqs['token_type_ids'],
             )
 
@@ -272,9 +279,9 @@ class DenseRetrieval:
                     }
 
                     p_inputs = {
-                        "input_ids": batch[3].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "attention_mask": batch[4].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
-                        "token_type_ids": batch[5].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
+                        "input_ids": batch[0].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                        "attention_mask": batch[1].view(batch_size * (self.num_negatives + 1), -1).to(self.device),
+                        "token_type_ids": batch[2].view(batch_size * (self.num_negatives + 1), -1).to(self.device)
                     }
 
                     q_outputs = self.q_encoder(**q_inputs)
@@ -407,25 +414,14 @@ class DenseRetrieval:
             return cqas
         
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
-        
-        """
-        Arguments:
-            query (str):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
-
-        self.q_encoder.eval()
-        self.q_encoder.to(self.device)
-
         self.q_encoder.eval()
         self.q_encoder.to(self.device)
 
         with torch.no_grad():
-            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length = self.max_len)
+            q_seqs = self.tokenizer([query], padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
             q_embedding = self.q_encoder(**q_seqs).cpu()
 
@@ -437,17 +433,6 @@ class DenseRetrieval:
         return doc_score.tolist(), doc_indices.tolist()
 
     def get_relevant_doc_bulk(self, queries: List[str], k: Optional[int] = 1) -> Tuple[List[List[float]], List[List[int]]]:
-        """
-        Arguments:
-            queries (List[str]):
-                여러 개의 Query를 리스트로 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Returns:
-            Tuple[List[List[float]], List[List[int]]]:
-                각 쿼리에 대한 상위 k개 문서의 점수와 인덱스를 반환합니다.
-        """
-
         self.q_encoder.eval()
         self.q_encoder.to(self.device)
 
@@ -458,6 +443,9 @@ class DenseRetrieval:
             for i in tqdm(range(0, len(queries), batch_size), desc="Dense retrieval: "):
                 batch_queries = queries[i:i+batch_size]
                 q_seqs = self.tokenizer(batch_queries, padding="max_length", truncation=True, return_tensors="pt", max_length=self.max_len)
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                    self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
                 q_seqs = {key: val.to(self.device) for key, val in q_seqs.items()}
                 batch_embeddings = self.q_encoder(**q_seqs).cpu()
                 q_embeddings.append(batch_embeddings)
@@ -646,16 +634,13 @@ if __name__ == "__main__":
             scores, indices = retriever.retrieve(query, topk=1)
 
     # 시험적으로 generate_gpt_negatives 메서드 테스트
-    test_questions = [
-        "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?",
-        "한국의 수도는 어디인가요?"
+    test_contexts = [
+        "미국 상의원 또는 미국 상원(United States Senate)은 양원제인 미국 의회의 상원이다. 미국 부통령이 상원의장이 된다. 각 주당 2명의 상원의원이 선출되어 100명의 상원의원으로 구성되어 있다. 임기는 6년이며, 2년마다 50개주 중 1/3씩 상원의원을 새로 선출하여 연방에 보낸다.",
+        "현대적 경영학의 시작은 1950년대로 볼 수 있다. 2차 세계대전 이후 유럽의 재건과 경제 발전으로 인해 기업의 규모가 커지고 복잡해졌다. 이에 따라 체계적인 경영 이론과 실무가 필요해졌고, 이는 현대적 경영학의 발전으로 이어졌다."
     ]
     
     print("Testing generate_gpt_negatives method:")
-    retriever.generate_gpt_negatives(test_questions, num_negatives=2)
-
-
-
+    retriever.generate_gpt_negatives(test_contexts, num_negatives=1)
 
 
 
