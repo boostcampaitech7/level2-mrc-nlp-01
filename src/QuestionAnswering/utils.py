@@ -23,6 +23,29 @@ import numpy as np
 from tqdm.auto import tqdm
 from transformers import PreTrainedTokenizerFast
 from transformers.trainer_utils import get_last_checkpoint
+from konlpy.tag import Mecab
+
+mecab = Mecab()
+
+def remove_josa(text):
+    """
+    주어진 텍스트의 끝부분에 붙은 조사를 제거합니다.
+    
+    Args:
+        text (str): 처리할 텍스트
+    
+    Returns:
+        str: 조사가 제거된 텍스트
+    """
+    # 문장을 형태소 단위로 분해하고 품사를 태깅
+    morphs = mecab.pos(text)
+    
+    # 결과물에서 마지막 형태소가 조사인지 확인
+    if morphs and morphs[-1][1] in ['JKS', 'JKC', 'JKG', 'JKO', 'JKB', 'JKV', 'JKQ']:
+        # 조사가 맞다면 해당 형태소를 제거하고 나머지 부분을 합쳐서 반환
+        return ''.join([morph[0] for morph in morphs[:-1]])
+    
+    return text
 
 def postprocess_qa_predictions(
     examples,
@@ -198,6 +221,7 @@ def postprocess_qa_predictions(
         for pred in predictions:
             offsets = pred.pop("offsets")
             pred["text"] = context[offsets[0] : offsets[1]]
+            pred["text"] = remove_josa(pred["text"])
 
         # rare edge case에는 null이 아닌 예측이 하나도 없으며 failure를 피하기 위해 fake prediction을 만듭니다.
         if len(predictions) == 0 or (
