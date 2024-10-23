@@ -1,0 +1,35 @@
+output_dir ./models/train_dataset
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py", line 465, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py", line 459, in main
+    do_mrc(config, training_args, module_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py", line 155, in do_mrc
+    additional_datasets = load_dataset(config.dataQA.useDataset())
+  File "/opt/conda/lib/python3.10/site-packages/datasets/load.py", line 2128, in load_dataset
+    builder_instance = load_dataset_builder(
+  File "/opt/conda/lib/python3.10/site-packages/datasets/load.py", line 1814, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File "/opt/conda/lib/python3.10/site-packages/datasets/load.py", line 1495, in dataset_module_factory
+    ).get_module()
+  File "/opt/conda/lib/python3.10/site-packages/datasets/load.py", line 1047, in get_module
+    data_files = DataFilesDict.from_patterns(
+  File "/opt/conda/lib/python3.10/site-packages/datasets/data_files.py", line 686, in from_patterns
+    DataFilesList.from_patterns(
+  File "/opt/conda/lib/python3.10/site-packages/datasets/data_files.py", line 601, in from_patterns
+    origin_metadata = _get_origin_metadata(data_files, download_config=download_config)
+  File "/opt/conda/lib/python3.10/site-packages/datasets/data_files.py", line 516, in _get_origin_metadata
+    return thread_map(
+  File "/opt/conda/lib/python3.10/site-packages/tqdm/contrib/concurrent.py", line 69, in thread_map
+    return _executor_map(ThreadPoolExecutor, fn, *iterables, **tqdm_kwargs)
+  File "/opt/conda/lib/python3.10/site-packages/tqdm/contrib/concurrent.py", line 51, in _executor_map
+    return list(tqdm_class(ex.map(fn, *iterables, chunksize=chunksize), **kwargs))
+  File "/opt/conda/lib/python3.10/concurrent/futures/_base.py", line 621, in result_iterator
+    yield _result_or_cancel(fs.pop())
+  File "/opt/conda/lib/python3.10/concurrent/futures/_base.py", line 319, in _result_or_cancel
+    return fut.result(timeout)
+  File "/opt/conda/lib/python3.10/concurrent/futures/_base.py", line 453, in result
+    self._condition.wait(timeout)
+  File "/opt/conda/lib/python3.10/threading.py", line 320, in wait
+    waiter.acquire()
+KeyboardInterrupt

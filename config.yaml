@@ -27,7 +27,7 @@ peft:
   lora_dropout: 0.1 # default = 0.1
 
 dataRetrieval:
-  type: sparse   # sparse dense hybrid
+  type: dense   # sparse dense hybrid
   eval: True
   context_path: ./data/wikipedia_documents.json
   top_k: 10

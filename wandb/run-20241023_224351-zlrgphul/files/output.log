@@ -1,0 +1,14 @@
+output_dir ./outputs/train_dataset
+Map: 100%|█████████████████████████████████████████████████████████████████████████████████████| 240/240 [00:00<00:00, 469.72 examples/s]
+10/23/2024 22:44:09 - WARNING - accelerate.utils.other -   Detected kernel version 5.4.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+/opt/conda/lib/python3.10/site-packages/transformers/trainer_pt_utils.py:483: FutureWarning: DistributedTensorGatherer is deprecated and will be removed in v5 of Transformers.
+  warnings.warn(
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 240/240 [00:02<00:00, 101.60it/s]
+10/23/2024 22:44:17 - INFO - QuestionAnswering.utils -   Post-processing 240 example predictions split into 652 features.
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████| 21/21 [00:09<00:00,  2.14it/s]
+10/23/2024 22:44:19 - INFO - QuestionAnswering.utils -   Saving predictions to ./outputs/train_dataset/predictions.json.
+10/23/2024 22:44:19 - INFO - QuestionAnswering.utils -   Saving nbest_preds to ./outputs/train_dataset/nbest_predictions.json.
+***** eval metrics *****
+  eval_samples =     652
+  exact_match  = 55.4167
+  f1           = 65.7662

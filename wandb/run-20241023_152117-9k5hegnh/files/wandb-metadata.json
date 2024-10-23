@@ -1,0 +1,47 @@
+{
+  "os":  "Linux-5.4.0-99-generic-x86_64-with-glibc2.31",
+  "python":  "3.10.13",
+  "startedAt":  "2024-10-23T15:21:17.273017Z",
+  "args":  [
+    "--do_train",
+    "--do_mrc"
+  ],
+  "program":  "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py",
+  "codePath":  "src/main.py",
+  "git":  {
+    "remote":  "https://github.com/boostcampaitech7/level2-mrc-nlp-01.git",
+    "commit":  "3456c2834d994138bd02fc5d20bfc776148fa9fb"
+  },
+  "email":  "adrune123@gmail.com",
+  "root":  "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01",
+  "host":  "instance-12469",
+  "username":  "root",
+  "executable":  "/opt/conda/bin/python",
+  "codePathLocal":  "src/main.py",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "gpu":  "Tesla V100-SXM2-32GB",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "52573995008",
+      "used":  "37845356544"
+    }
+  },
+  "memory":  {
+    "total":  "94903173120"
+  },
+  "cpu":  {
+    "count":  8,
+    "countLogical":  8
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "Tesla V100-SXM2-32GB",
+      "memoryTotal":  "34359738368",
+      "cudaCores":  5120,
+      "architecture":  "Volta"
+    }
+  ],
+  "cudaVersion":  "12.2"
+}

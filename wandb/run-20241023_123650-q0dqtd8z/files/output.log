@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py", line 465, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/case2/level2-mrc-nlp-01/src/main.py", line 431, in main
+    training_args, data_args, module_args = parser.parse_args_into_dataclasses()
+  File "/opt/conda/lib/python3.10/site-packages/transformers/hf_argparser.py", line 348, in parse_args_into_dataclasses
+    raise ValueError(f"Some specified arguments are not used by the HfArgumentParser: {remaining_args}")
+ValueError: Some specified arguments are not used by the HfArgumentParser: ['--do-retrieval']
