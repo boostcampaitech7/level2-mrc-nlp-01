@@ -1,0 +1,16 @@
+{"time":"2024-10-23T00:06:04.323451217Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-23T00:06:04.323471365Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241023_000604-iggp44es/logs/debug-core.log"}
+{"time":"2024-10-23T00:06:04.428312458Z","level":"INFO","msg":"created new stream","id":"iggp44es"}
+{"time":"2024-10-23T00:06:04.428358649Z","level":"INFO","msg":"stream: started","id":"iggp44es"}
+{"time":"2024-10-23T00:06:04.428597307Z","level":"INFO","msg":"sender: started","stream_id":"iggp44es"}
+{"time":"2024-10-23T00:06:04.428502491Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"iggp44es"}}
+{"time":"2024-10-23T00:06:04.428580483Z","level":"INFO","msg":"handler: started","stream_id":{"value":"iggp44es"}}
+{"time":"2024-10-23T00:06:04.897163846Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-23T00:06:23.41601533Z","level":"INFO","msg":"stream: closing","id":"iggp44es"}
+{"time":"2024-10-23T00:06:23.416049518Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-23T00:06:23.417078163Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-23T00:06:24.503757423Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-23T00:06:24.921113978Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"iggp44es"}}
+{"time":"2024-10-23T00:06:24.921148201Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"iggp44es"}}
+{"time":"2024-10-23T00:06:24.921182632Z","level":"INFO","msg":"sender: closed","stream_id":"iggp44es"}
+{"time":"2024-10-23T00:06:24.92130636Z","level":"INFO","msg":"stream: closed","id":"iggp44es"}

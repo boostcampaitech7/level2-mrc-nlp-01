@@ -1,0 +1,13 @@
+output_dir ./outputs/train_dataset
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 508, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 505, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 367, in do_retrieval
+    sparse_retriever = SparseRetrieval(
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/sparse_retrieval.py", line 38, in __init__
+    data_path = os.path.dirname(context_path)
+  File "/opt/conda/lib/python3.10/posixpath.py", line 152, in dirname
+    p = os.fspath(p)
+TypeError: expected str, bytes or os.PathLike object, not NoneType

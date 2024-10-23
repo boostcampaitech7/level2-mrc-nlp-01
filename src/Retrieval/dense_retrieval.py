@@ -86,15 +86,17 @@ class RoBERTaEncoder(RobertaPreTrainedModel):
         return pooled_output
 
 class DenseRetrieval:
-    def __init__(self, config) -> NoReturn:
+    def __init__(self, config, context_path=None) -> NoReturn:
         set_seed(config.seed())
 
         data_path = os.path.dirname(config.dataset.train_path())
-        context_path = config.dataset.context_path()
-
         self.data_path = data_path
-        self.context_path = context_path
-        with open(context_path, "r", encoding="utf-8") as f:
+        self.context_path = context_path or config.dataRetrieval.context_path()
+
+        if self.context_path is None:
+            raise ValueError("context_path is None. Please check your configuration.")
+
+        with open(self.context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(

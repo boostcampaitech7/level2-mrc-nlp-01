@@ -1,0 +1,16 @@
+{"time":"2024-10-22T16:35:08.360617752Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T16:35:08.36063186Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_163508-t9rljncg/logs/debug-core.log"}
+{"time":"2024-10-22T16:35:08.478697566Z","level":"INFO","msg":"created new stream","id":"t9rljncg"}
+{"time":"2024-10-22T16:35:08.478748057Z","level":"INFO","msg":"stream: started","id":"t9rljncg"}
+{"time":"2024-10-22T16:35:08.478810673Z","level":"INFO","msg":"handler: started","stream_id":{"value":"t9rljncg"}}
+{"time":"2024-10-22T16:35:08.478797129Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"t9rljncg"}}
+{"time":"2024-10-22T16:35:08.478936053Z","level":"INFO","msg":"sender: started","stream_id":"t9rljncg"}
+{"time":"2024-10-22T16:35:08.84095484Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T16:35:19.790806647Z","level":"INFO","msg":"stream: closing","id":"t9rljncg"}
+{"time":"2024-10-22T16:35:19.790841553Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T16:35:19.791908883Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T16:35:20.946531986Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T16:35:21.224130774Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"t9rljncg"}}
+{"time":"2024-10-22T16:35:21.224203601Z","level":"INFO","msg":"sender: closed","stream_id":"t9rljncg"}
+{"time":"2024-10-22T16:35:21.22418931Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"t9rljncg"}}
+{"time":"2024-10-22T16:35:21.224310078Z","level":"INFO","msg":"stream: closed","id":"t9rljncg"}

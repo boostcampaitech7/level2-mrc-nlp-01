@@ -1,0 +1,16 @@
+{"time":"2024-10-22T14:39:40.32733714Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T14:39:40.327354826Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_143940-p6wauzst/logs/debug-core.log"}
+{"time":"2024-10-22T14:39:40.429112517Z","level":"INFO","msg":"created new stream","id":"p6wauzst"}
+{"time":"2024-10-22T14:39:40.429163811Z","level":"INFO","msg":"stream: started","id":"p6wauzst"}
+{"time":"2024-10-22T14:39:40.42918255Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"p6wauzst"}}
+{"time":"2024-10-22T14:39:40.429435295Z","level":"INFO","msg":"handler: started","stream_id":{"value":"p6wauzst"}}
+{"time":"2024-10-22T14:39:40.429448941Z","level":"INFO","msg":"sender: started","stream_id":"p6wauzst"}
+{"time":"2024-10-22T14:39:40.889719513Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T14:39:41.090910476Z","level":"INFO","msg":"stream: closing","id":"p6wauzst"}
+{"time":"2024-10-22T14:39:41.090937898Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T14:39:41.091545607Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T14:39:42.917983428Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T14:39:43.202071916Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"p6wauzst"}}
+{"time":"2024-10-22T14:39:43.202142681Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"p6wauzst"}}
+{"time":"2024-10-22T14:39:43.202206229Z","level":"INFO","msg":"sender: closed","stream_id":"p6wauzst"}
+{"time":"2024-10-22T14:39:43.202220355Z","level":"INFO","msg":"stream: closed","id":"p6wauzst"}

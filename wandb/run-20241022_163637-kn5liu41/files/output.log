@@ -1,0 +1,30 @@
+output_dir ./outputs/train_dataset
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Lengths of unique contexts : 56737
+Debug: dense_retriever.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: dense_retriever.model_name = klue/bert-base
+Initializing hybrid_1stage with ratio: None
+Dense retriever type: <class 'Retrieval.dense_retrieval.DenseRetrieval'>
+Dense retriever attributes: ['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'args', 'build_faiss', 'context_path', 'contexts', 'data_path', 'dataset', 'device', 'get_dense_embedding', 'get_relevant_doc', 'get_relevant_doc_bulk', 'get_relevant_doc_bulk_faiss', 'get_relevant_doc_faiss', 'grad_scaler', 'ids', 'indexer', 'max_len', 'model', 'model_name', 'num_negatives', 'p_embeddings', 'p_encoder', 'prepare_in_batch_negative', 'q_encoder', 'retrieve', 'retrieve_faiss', 'run', 'tokenizer', 'train']
+Hybrid retrieve called with ratio: None
+Starting hybrid_1stage run method
+Initial ratio: None
+Config hybrid_ratio: 0.5
+Ratio updated to: 0.5
+Using top_k: 10
+Processing single dataset
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 530, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 527, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 420, in do_retrieval
+    df = retriever.run(validation_dataset, training_args, config)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/hybrid_1stage.py", line 112, in run
+    df = self.retrieve(datasets, topk=self.top_k)
+AttributeError: 'Hybrid1StageRetrieval' object has no attribute 'retrieve'

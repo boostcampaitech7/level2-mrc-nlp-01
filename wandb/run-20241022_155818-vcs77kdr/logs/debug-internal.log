@@ -1,0 +1,16 @@
+{"time":"2024-10-22T15:58:19.00856555Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T15:58:19.008586528Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_155818-vcs77kdr/logs/debug-core.log"}
+{"time":"2024-10-22T15:58:19.113801241Z","level":"INFO","msg":"created new stream","id":"vcs77kdr"}
+{"time":"2024-10-22T15:58:19.113853163Z","level":"INFO","msg":"stream: started","id":"vcs77kdr"}
+{"time":"2024-10-22T15:58:19.113936267Z","level":"INFO","msg":"sender: started","stream_id":"vcs77kdr"}
+{"time":"2024-10-22T15:58:19.113907939Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"vcs77kdr"}}
+{"time":"2024-10-22T15:58:19.114086222Z","level":"INFO","msg":"handler: started","stream_id":{"value":"vcs77kdr"}}
+{"time":"2024-10-22T15:58:19.489246539Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T15:58:28.912594978Z","level":"INFO","msg":"stream: closing","id":"vcs77kdr"}
+{"time":"2024-10-22T15:58:28.912650014Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T15:58:28.913523765Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T15:58:31.757372505Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T15:58:32.041439159Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"vcs77kdr"}}
+{"time":"2024-10-22T15:58:32.04147292Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"vcs77kdr"}}
+{"time":"2024-10-22T15:58:32.041551846Z","level":"INFO","msg":"sender: closed","stream_id":"vcs77kdr"}
+{"time":"2024-10-22T15:58:32.041563107Z","level":"INFO","msg":"stream: closed","id":"vcs77kdr"}

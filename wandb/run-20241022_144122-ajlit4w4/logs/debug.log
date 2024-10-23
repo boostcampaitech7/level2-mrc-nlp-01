@@ -1,0 +1,76 @@
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Current SDK version is 0.18.5
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Configure stats pid to 958201
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Loading settings from /data/ephemeral/home/.config/wandb/settings
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Loading settings from /data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/settings
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Loading settings from environment variables: {}
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Inferring run settings from compute environment: {'program_relpath': 'src/main.py', 'program_abspath': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py', 'program': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py'}
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Applying login settings: {'api_key': '***REDACTED***'}
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Applying login settings: {'api_key': '***REDACTED***'}
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_setup.py:_flush():79] Applying login settings: {}
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_init.py:_log_setup():534] Logging user logs to /data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_144122-ajlit4w4/logs/debug.log
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_init.py:_log_setup():535] Logging internal logs to /data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_144122-ajlit4w4/logs/debug-internal.log
+2024-10-22 14:41:22,664 INFO    MainThread:958201 [wandb_init.py:init():621] calling init triggers
+2024-10-22 14:41:22,670 INFO    MainThread:958201 [wandb_init.py:init():628] wandb.init called with sweep_config: {}
+config: {'model': name: klue/bert-base
+retriever_tokenizer: Dongjin-kr/ko-reranker
+, 'seed': 2024
+...
+, 'training': adam_eps: 1e-8
+batch_size: 16
+epochs: 3
+learning_rate: 5e-5
+logging_steps: 10
+loss: L1loss
+optimizer: AdamW
+predict_with_generate: false
+scheduler: linear
+shuffle: true
+weight_decay: 0
+, 'peft': LoRA: false
+inference: false
+lora_alpha: 32
+lora_dropout: 0.1
+r: 8
+task_type: SEQ_2_SEQ_LM
+, 'dataRetrieval': context_path: ./data/wikipedia_documents.json
+eval: true
+faiss:
+    num_clusters: 64
+    use: false
+hybrid_ratio: 0.5
+top_k: 10
+type: hybrid1
+, 'dataQA': augmentation: null
+generation:
+    num_beams: 3
+path:
+    test: ./data/test_dataset
+    train: ./data/train_dataset
+preprocess: null
+tokenizer:
+    doc_stride: 128
+    max_answer_length: 64
+    max_seq_length: 384
+    overwrite_cache: false
+    pad_to_max_length: true
+    preprocessing_num_workers: null
+useDataset: KorQuAD/squad_kor_v1
+, 'output': model: ./models/train_dataset
+test: ./outputs/test_dataset
+train: ./outputs/train_dataset
+, 'testing': false
+...
+}
+2024-10-22 14:41:22,670 INFO    MainThread:958201 [wandb_init.py:init():671] starting backend
+2024-10-22 14:41:22,670 INFO    MainThread:958201 [wandb_init.py:init():675] sending inform_init request
+2024-10-22 14:41:22,671 INFO    MainThread:958201 [backend.py:_multiprocessing_setup():104] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2024-10-22 14:41:22,672 INFO    MainThread:958201 [wandb_init.py:init():688] backend started and connected
+2024-10-22 14:41:22,675 INFO    MainThread:958201 [wandb_init.py:init():783] updated telemetry
+2024-10-22 14:41:22,680 INFO    MainThread:958201 [wandb_init.py:init():816] communicating run to backend with 90.0 second timeout
+2024-10-22 14:41:23,537 INFO    MainThread:958201 [wandb_init.py:init():867] starting run threads in backend
+2024-10-22 14:41:23,682 INFO    MainThread:958201 [wandb_run.py:_console_start():2463] atexit reg
+2024-10-22 14:41:23,682 INFO    MainThread:958201 [wandb_run.py:_redirect():2311] redirect: wrap_raw
+2024-10-22 14:41:23,682 INFO    MainThread:958201 [wandb_run.py:_redirect():2376] Wrapping output streams.
+2024-10-22 14:41:23,682 INFO    MainThread:958201 [wandb_run.py:_redirect():2401] Redirects installed.
+2024-10-22 14:41:23,684 INFO    MainThread:958201 [wandb_init.py:init():911] run started, returning control to user process
+2024-10-22 14:41:49,174 WARNING MsgRouterThr:958201 [router.py:message_loop():77] message_loop has been closed

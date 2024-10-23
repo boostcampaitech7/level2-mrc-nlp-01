@@ -1,0 +1,130 @@
+Debug: __call__ method called with default_value=./outputs/train_dataset
+Debug: self.atom = ./outputs/train_dataset
+Debug: self.__dict__ = {'atom': './outputs/train_dataset'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 3
+Debug: self.__dict__ = {'atom': 3}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 16
+Debug: self.__dict__ = {'atom': 16}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 16
+Debug: self.__dict__ = {'atom': 16}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 5e-5
+Debug: self.__dict__ = {'atom': '5e-5'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 0
+Debug: self.__dict__ = {'atom': 0}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = linear
+Debug: self.__dict__ = {'atom': 'linear'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = False
+Debug: self.__dict__ = {'atom': False}
+Debug: __call__ method called with default_value=10
+Debug: self.atom = 10
+Debug: self.__dict__ = {'atom': 10}
+Debug: __call__ method called with default_value=1e-08
+Debug: self.atom = 1e-8
+Debug: self.__dict__ = {'atom': '1e-8'}
+Debug: __call__ method called with default_value=False
+Debug: self.atom = False
+Debug: self.__dict__ = {'atom': False}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 2024
+Debug: self.__dict__ = {'atom': 2024}
+output_dir ./outputs/train_dataset
+Debug: __call__ method called with default_value=None
+Debug: self.atom = None
+Debug: self.__dict__ = {'type': hybrid1
+...
+, 'eval': true
+...
+, 'context_path': /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+...
+, 'top_k': 10
+...
+, 'hybrid_ratio': 0.5
+...
+, 'faiss': num_clusters: 64
+use: false
+}
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: __call__ method called with default_value=/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.atom = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.__dict__ = {'atom': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json'}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: __call__ method called with default_value=None
+Debug: self.atom = hybrid1
+Debug: self.__dict__ = {'atom': 'hybrid1'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = hybrid1
+Debug: self.__dict__ = {'atom': 'hybrid1'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = hybrid1
+Debug: self.__dict__ = {'atom': 'hybrid1'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = hybrid1
+Debug: self.__dict__ = {'atom': 'hybrid1'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = Dongjin-kr/ko-reranker
+Debug: self.__dict__ = {'atom': 'Dongjin-kr/ko-reranker'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.__dict__ = {'atom': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = None
+Debug: self.__dict__ = {'type': hybrid1
+...
+, 'eval': true
+...
+, 'context_path': /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+...
+, 'top_k': 10
+...
+, 'hybrid_ratio': 0.5
+...
+, 'faiss': num_clusters: 64
+use: false
+}
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.__dict__ = {'atom': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json'}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: __call__ method called with default_value=None
+Debug: self.atom = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.__dict__ = {'atom': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json'}
+Debug: context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Debug: __call__ method called with default_value=None
+Debug: self.atom = 2024
+Debug: self.__dict__ = {'atom': 2024}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = ./data/train_dataset
+Debug: self.__dict__ = {'atom': './data/train_dataset'}
+Debug: __call__ method called with default_value=None
+Debug: self.atom = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: self.__dict__ = {'atom': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json'}
+Debug: DenseRetrieval context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Debug: __call__ method called with default_value=None
+Debug: self.atom = klue/bert-base
+Debug: self.__dict__ = {'atom': 'klue/bert-base'}
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 519, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 516, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 383, in do_retrieval
+    dense_retriever = DenseRetrieval(config)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/dense_retrieval.py", line 146, in __init__
+    self.p_encoder = BertEncoder.from_pretrained(self.model_name).to(self.device)
+  File "/opt/conda/lib/python3.10/site-packages/transformers/modeling_utils.py", line 3886, in from_pretrained
+    model = cls(config, *model_args, **model_kwargs)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/dense_retrieval.py", line 42, in __init__
+    train_path = config.dataset.train_path() or "./data/train_dataset"
+  File "/opt/conda/lib/python3.10/site-packages/transformers/configuration_utils.py", line 202, in __getattribute__
+    return super().__getattribute__(key)
+AttributeError: 'BertConfig' object has no attribute 'dataset'

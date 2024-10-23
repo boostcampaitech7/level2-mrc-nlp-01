@@ -26,6 +26,7 @@ from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from Retrieval.cross_encoder import CrossDenseRetrieval
 from Retrieval.hybrid_retriever import HybridRetriever
+from Retrieval.hybrid_1stage import Hybrid1StageRetrieval
 from dataclasses import dataclass, field
 import nltk
 import wandb
@@ -33,6 +34,7 @@ import yaml
 from datetime import datetime
 import pytz
 from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel
+from pathlib import Path
 
 def set_all_seed(seed, deterministic=False):
     random.seed(seed)
@@ -183,7 +185,7 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
     else:
         model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
     
-    # 모델 구조 확인 - target_modules 를 모를시 사용
+    # 모델 구조 확인 - target_modules 를 를시 사용
     # for name, module in model.named_modules():
     #     print(name)
 
@@ -336,12 +338,21 @@ def do_mrc(config, training_args, module_args, logger, is_testing):
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(eval_dataset)
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+        if config.dataRetrieval.type() == 'hybrid1' and module_args.do_retrieval:
+            metrics = do_hybrid1_eval(config, training_args, datasets, tokenizer, logger)
+        else:
+            metrics = trainer.evaluate()
+            metrics["eval_samples"] = len(eval_dataset)
+            trainer.log_metrics("eval", metrics)
+            trainer.save_metrics("eval", metrics)
 
 def do_retrieval(config, training_args, logger, is_testing):
+    print(f"Debug: config.dataRetrieval = {config.dataRetrieval()}")
+    #print(f"Debug: config.dataRetrieval.context_path = {config.dataRetrieval.context_path('/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json')}")
+    print(f"Debug: config.dataRetrieval.context_path = {config.dataRetrieval.context_path()}")
+    
+    retriever = None  # 기본값 설정
+
     if config.dataRetrieval.type() == "dense":
         retriever = use_dense_retrieval()
     elif config.dataRetrieval.type() == "sparse":
@@ -358,7 +369,34 @@ def do_retrieval(config, training_args, logger, is_testing):
             testing=is_testing,
         )
         retriever = HybridRetriever(dense_retriever, sparse_retriever)
+    elif config.dataRetrieval.type() == "hybrid1":
+        tokenizer = AutoTokenizer.from_pretrained(config.model.retriever_tokenizer())
+        context_path = config.dataRetrieval.context_path()
+        print(f"Debug: config.dataRetrieval = {config.dataRetrieval()}")
+        print(f"Debug: config.dataRetrieval.context_path = {config.dataRetrieval.context_path()}")
+        print(f"Debug: context_path = {context_path}")
+        if context_path is None:
+            raise ValueError("context_path is None. Please check your configuration.")
+        
+        sparse_retriever = SparseRetrieval(
+            tokenize_fn=tokenizer.tokenize,
+            context_path=context_path,
+            testing=is_testing,
+        )
+        dense_retriever = DenseRetrieval(config, context_path=context_path)
+        
+        print(f"Debug: Initializing Hybrid1StageRetrieval")
+        retriever = Hybrid1StageRetrieval(
+            sparse_retriever=sparse_retriever,
+            dense_retriever=dense_retriever,
+            config=config
+        )
+        print(f"Debug: Hybrid1StageRetrieval initialized")
+        print(f"Debug: Hybrid1StageRetrieval initialized with ratio: {retriever.ratio}")
     
+    if retriever is None:
+        raise ValueError(f"Invalid retriever type: {config.dataRetrieval.type()}")
+
     if training_args.do_train:
         retriever.train()
     
@@ -367,11 +405,24 @@ def do_retrieval(config, training_args, logger, is_testing):
         if is_testing:
             datasets = use_small_datasets(datasets)
         validation_dataset = datasets["validation"]
-        # TODO: faiss에 대한 설정 필요
         k = config.dataRetrieval.top_k(5)
-        df = retriever.retrieve(validation_dataset, 
-                                topk=k,
-                                concat_context=False)
+        
+        if config.dataRetrieval.type() == "hybrid1":
+            print("Starting hybrid1 retrieval process...")
+            print(f"Retriever type: {type(retriever).__name__}")
+            print(f"Dense embeddings status: {'Loaded' if hasattr(retriever, 'dense_retriever') and retriever.dense_retriever.p_embeddings is not None else 'Not loaded'}")
+            df = retriever.retrieve(validation_dataset, topk=k)
+            print("Hybrid1 retrieval process completed.")
+        else:
+            # 기존 코드 유지
+            if hasattr(retriever, 'retrieve'):
+                df = retriever.retrieve(validation_dataset, topk=k)
+            else:
+                df = retriever.run(validation_dataset, training_args, config)
+        
+        # 'original_context' 열 추가
+        df['original_context'] = validation_dataset['context']
+        
         rankings = []
         for _, row in df.iterrows():
             in_k = False
@@ -387,10 +438,26 @@ def do_retrieval(config, training_args, logger, is_testing):
             return sum([1 for rank in rankings if rank <= k]) / len(rankings)
         
         recalls = {f"recall@{i}": recall_at_k(i) for i in range(1, k+1)}
-        output_path = config.output.train('./outputs/train_dataset')
-        with open(os.path.join(output_path, 'recalls.json'), 'w') as f:
+        
+        # 결과 저장 경로 설정
+        if config.dataRetrieval.type() == "sparse":
+            output_path = Path("/data/ephemeral/home/ksw/level2-mrc-nlp-01/data")
+            output_file = output_path / "sparse_retrieval_results.json"
+        elif config.dataRetrieval.type() == "dense":
+            output_path = Path("/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/cross_encoder")
+            output_file = output_path / "dense_retrieval_results.json"
+        else:
+            output_path = Path("/data/ephemeral/home/ksw/level2-mrc-nlp-01/data")
+            output_file = output_path / "hybrid_retrieval_results.json"
+        
+        # 디렉토리 생성 (이미 존재하는 경우 무시)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # 결과 저장
+        with open(output_file, 'w') as f:
             json.dump(recalls, f, indent=4)
-            
+        
+        print(f"Retrieval results saved to: {output_file}")
         print(f"Recall@{k} : {recalls[f'recall@{k}']}")
     
     elif training_args.do_predict:
@@ -406,6 +473,49 @@ def do_retrieval(config, training_args, logger, is_testing):
             json.dump(contexts, f, indent=4)
         print("Retrieval results are saved in", config.output.test('./outputs/test_dataset'))
         
+def do_hybrid1_eval(config, training_args, datasets, tokenizer, logger):
+    model_name = config.model.name()  # 'klue/bert-base' 또는 다른 사전 학습 모델
+    config_hf = AutoConfig.from_pretrained(model_name)
+    model = AutoModelForQuestionAnswering.from_pretrained(model_name, config=config_hf)
+
+    # Retrieval 결과를 사용하여 데이터셋 준비
+    datasets = use_retriever_datasets(config, tokenizer, datasets, training_args, is_testing=False)
+    
+    eval_dataset = datasets["validation"]
+    wrapped_tokenizer = QuestionAnsweringTokenizerWrapper(tokenizer, config)
+    eval_dataset = eval_dataset.map(
+        wrapped_tokenizer.encode_valid,
+        batched=True,
+        remove_columns=eval_dataset.column_names,
+        num_proc=config.dataQA.tokenizer.preprocess_num_workers(None),
+        load_from_cache_file=not config.dataQA.overwrite_cache(False)
+    )
+
+    data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
+
+    metric = load_metric("squad")
+    def compute_metrics(eval_predictions):
+        return metric.compute(predictions=eval_predictions.predictions, references=eval_predictions.label_ids)
+
+    trainer = QuestionAnsweringTrainer(
+        model=model,
+        args=training_args,
+        config=config,
+        eval_dataset=eval_dataset,
+        eval_examples=datasets["validation"],
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        wrapped_tokenizer=wrapped_tokenizer
+    )
+
+    logger.info("*** Evaluate with Hybrid1 ***")
+    metrics = trainer.evaluate()
+    metrics["eval_samples"] = len(eval_dataset)
+    trainer.log_metrics("eval", metrics)
+    trainer.save_metrics("eval", metrics)
+
+    return metrics
+
 def main():
     config = Config()
     logger = configure_logging()
@@ -458,7 +568,9 @@ def main():
         do_mrc(config, training_args, module_args, logger, is_testing)
     elif module_args.do_retrieval:
         # retrieval만 수행하는 경우
+        print("Starting retrieval process")
         do_retrieval(config, training_args, logger, is_testing)
 
 if __name__ == "__main__":
     main()
+

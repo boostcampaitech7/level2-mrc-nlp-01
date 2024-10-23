@@ -1,0 +1,73 @@
+output_dir ./outputs/train_dataset
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Error initializing DenseRetrieval: expected str, bytes or os.PathLike object, not NoneType
+Debug: config = dataQA:
+    augmentation: null
+    generation:
+        num_beams: 3
+    path:
+        test: ./data/test_dataset
+        train: ./data/train_dataset
+    preprocess: null
+    tokenizer:
+        doc_stride: 128
+        max_answer_length: 64
+        max_seq_length: 384
+        overwrite_cache: false
+        pad_to_max_length: true
+        preprocessing_num_workers: null
+    useDataset: KorQuAD/squad_kor_v1
+dataRetrieval:
+    context_path: /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+    eval: true
+    faiss:
+        num_clusters: 64
+        use: false
+    hybrid_ratio: 0.5
+    top_k: 10
+    type: hybrid1
+dataset:
+    train_path: ./data/train_dataset
+model:
+    name: klue/bert-base
+    retriever_tokenizer: Dongjin-kr/ko-reranker
+output:
+    model: ./models/train_dataset
+    test: ./outputs/test_dataset
+    train: ./outputs/train_dataset
+peft:
+    LoRA: false
+    inference: false
+    lora_alpha: 32
+    lora_dropout: 0.1
+    r: 8
+    task_type: SEQ_2_SEQ_LM
+seed: 2024
+testing: false
+training:
+    adam_eps: 1e-8
+    batch_size: 16
+    epochs: 3
+    learning_rate: 5e-5
+    logging_steps: 10
+    loss: L1loss
+    optimizer: AdamW
+    predict_with_generate: false
+    scheduler: linear
+    shuffle: true
+    weight_decay: 0
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 531, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 528, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 387, in do_retrieval
+    dense_retriever = DenseRetrieval(config)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/dense_retrieval.py", line 97, in __init__
+    with open(context_path, "r", encoding="utf-8") as f:
+TypeError: expected str, bytes or os.PathLike object, not NoneType

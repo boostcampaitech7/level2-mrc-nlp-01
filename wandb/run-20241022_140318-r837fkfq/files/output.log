@@ -1,0 +1,5 @@
+output_dir ./models/train_dataset
+Lengths of unique contexts : 56737
+Tokenizing documents:   0%|                                                                        | 0/56737 [00:00<?, ?it/s]Token indices sequence length is longer than the specified maximum sequence length for this model (1192 > 512). Running this sequence through the model will result in indexing errors
+Tokenizing documents: 100%|███████████████████████████████████████████████████████████| 56737/56737 [01:43<00:00, 547.06it/s]
+-----------BM25 pickle saved.-----------

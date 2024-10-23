@@ -1,0 +1,17 @@
+output_dir ./outputs/train_dataset
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': './data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = ./data/wikipedia_documents.json
+Debug: context_path = ./data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 516, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 513, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 380, in do_retrieval
+    dense_retriever = DenseRetrieval(config)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/dense_retrieval.py", line 92, in __init__
+    data_path = os.path.dirname(config.dataset.train_path())
+  File "/opt/conda/lib/python3.10/posixpath.py", line 152, in dirname
+    p = os.fspath(p)
+TypeError: expected str, bytes or os.PathLike object, not NoneType

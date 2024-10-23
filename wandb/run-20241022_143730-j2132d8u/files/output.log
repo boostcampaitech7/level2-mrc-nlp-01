@@ -1,0 +1,9 @@
+output_dir ./outputs/train_dataset
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 478, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 475, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 386, in do_retrieval
+    df = retriever.retrieve(validation_dataset,
+UnboundLocalError: local variable 'retriever' referenced before assignment

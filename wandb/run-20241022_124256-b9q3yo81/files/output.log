@@ -1,0 +1,9 @@
+output_dir ./models/train_dataset
+tokenizer_config.json: 100%|████████████████████████████████████████████████████████████| 1.21k/1.21k [00:00<00:00, 6.01MB/s]
+sentencepiece.bpe.model: 100%|██████████████████████████████████████████████████████████| 5.07M/5.07M [00:00<00:00, 65.8MB/s]
+tokenizer.json: 100%|████████████████████████████████████████████████████████████████████| 17.1M/17.1M [00:00<00:00, 153MB/s]
+special_tokens_map.json: 100%|██████████████████████████████████████████████████████████████| 963/963 [00:00<00:00, 3.72MB/s]
+Lengths of unique contexts : 56737
+Tokenizing documents:   0%|                                                                        | 0/56737 [00:00<?, ?it/s]Token indices sequence length is longer than the specified maximum sequence length for this model (1192 > 512). Running this sequence through the model will result in indexing errors
+Tokenizing documents: 100%|███████████████████████████████████████████████████████████| 56737/56737 [01:11<00:00, 793.15it/s]
+-----------BM25 pickle saved.-----------

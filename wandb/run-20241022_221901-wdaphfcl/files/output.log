@@ -1,0 +1,36 @@
+output_dir ./outputs/train_dataset
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: config.dataRetrieval = {'type': 'hybrid1', 'eval': True, 'context_path': '/data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json', 'top_k': 10, 'hybrid_ratio': 0.5, 'faiss': {'use': False, 'num_clusters': 64}}
+Debug: config.dataRetrieval.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Lengths of unique contexts : 56737
+Lengths of unique contexts : 56737
+Debug: dense_retriever.context_path = /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/wikipedia_documents.json
+Debug: dense_retriever.model_name = klue/bert-base
+Initializing hybrid_1stage with ratio: None
+Hybrid retrieve called with ratio: None
+Retrieving with top_k: 10
+Using hybrid ratio: None
+-----------BM25 pickle loaded.-----------
+get_relevant_doc_bulk 실행중 queries의 개수는  240
+get_relevant_doc_bulk 실행중 queries의 type은  <class 'list'>
+Processing queries:  13%|████████▏                                                      | 31/240 [00:27<03:04,  1.13it/s]
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 530, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 527, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 418, in do_retrieval
+    df = retriever.retrieve(validation_dataset, topk=k)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/hybrid_1stage.py", line 41, in retrieve
+    sparse_results = self.sparse_retriever.retrieve(dataset, topk=topk)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/sparse_retrieval.py", line 184, in retrieve
+    doc_scores, doc_indices = self.get_relevant_doc_bulk(
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/sparse_retrieval.py", line 268, in get_relevant_doc_bulk
+    scores = self.bm25.get_scores(tokenized_query)
+  File "/opt/conda/lib/python3.10/site-packages/rank_bm25.py", line 118, in get_scores
+    q_freq = np.array([(doc.get(q) or 0) for doc in self.doc_freqs])
+  File "/opt/conda/lib/python3.10/site-packages/rank_bm25.py", line 118, in <listcomp>
+    q_freq = np.array([(doc.get(q) or 0) for doc in self.doc_freqs])
+KeyboardInterrupt

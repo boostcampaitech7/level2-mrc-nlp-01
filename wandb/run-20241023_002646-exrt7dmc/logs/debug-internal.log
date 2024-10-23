@@ -1,0 +1,16 @@
+{"time":"2024-10-23T00:26:46.248962126Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-23T00:26:46.248981055Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241023_002646-exrt7dmc/logs/debug-core.log"}
+{"time":"2024-10-23T00:26:46.364816644Z","level":"INFO","msg":"created new stream","id":"exrt7dmc"}
+{"time":"2024-10-23T00:26:46.364865505Z","level":"INFO","msg":"stream: started","id":"exrt7dmc"}
+{"time":"2024-10-23T00:26:46.365026395Z","level":"INFO","msg":"handler: started","stream_id":{"value":"exrt7dmc"}}
+{"time":"2024-10-23T00:26:46.364927295Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"exrt7dmc"}}
+{"time":"2024-10-23T00:26:46.365161702Z","level":"INFO","msg":"sender: started","stream_id":"exrt7dmc"}
+{"time":"2024-10-23T00:26:46.836715963Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-23T00:27:06.542594993Z","level":"INFO","msg":"stream: closing","id":"exrt7dmc"}
+{"time":"2024-10-23T00:27:06.542636282Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-23T00:27:06.543542119Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-23T00:27:07.405021818Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-23T00:27:07.749001793Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"exrt7dmc"}}
+{"time":"2024-10-23T00:27:07.749054486Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"exrt7dmc"}}
+{"time":"2024-10-23T00:27:07.749178676Z","level":"INFO","msg":"sender: closed","stream_id":"exrt7dmc"}
+{"time":"2024-10-23T00:27:07.749189931Z","level":"INFO","msg":"stream: closed","id":"exrt7dmc"}

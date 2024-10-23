@@ -1,0 +1,16 @@
+{"time":"2024-10-22T14:56:15.994638697Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T14:56:15.99465439Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_145615-yhelo7yk/logs/debug-core.log"}
+{"time":"2024-10-22T14:56:16.096320064Z","level":"INFO","msg":"created new stream","id":"yhelo7yk"}
+{"time":"2024-10-22T14:56:16.096367395Z","level":"INFO","msg":"stream: started","id":"yhelo7yk"}
+{"time":"2024-10-22T14:56:16.096477855Z","level":"INFO","msg":"sender: started","stream_id":"yhelo7yk"}
+{"time":"2024-10-22T14:56:16.096427779Z","level":"INFO","msg":"handler: started","stream_id":{"value":"yhelo7yk"}}
+{"time":"2024-10-22T14:56:16.096433389Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"yhelo7yk"}}
+{"time":"2024-10-22T14:56:16.468419617Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T14:58:41.236219827Z","level":"INFO","msg":"stream: closing","id":"yhelo7yk"}
+{"time":"2024-10-22T14:58:41.236252555Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T14:58:41.23700544Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T14:58:42.162303134Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T14:58:42.563085148Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"yhelo7yk"}}
+{"time":"2024-10-22T14:58:42.563143281Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"yhelo7yk"}}
+{"time":"2024-10-22T14:58:42.563173375Z","level":"INFO","msg":"sender: closed","stream_id":"yhelo7yk"}
+{"time":"2024-10-22T14:58:42.563303498Z","level":"INFO","msg":"stream: closed","id":"yhelo7yk"}

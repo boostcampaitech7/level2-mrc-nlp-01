@@ -1,0 +1,9 @@
+output_dir ./outputs/train_dataset
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 482, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 479, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 379, in do_retrieval
+    raise ValueError(f"Invalid retriever type: {config.dataRetrieval.type()}")
+ValueError: Invalid retriever type: hubrid1

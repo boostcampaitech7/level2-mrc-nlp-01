@@ -1,0 +1,16 @@
+{"time":"2024-10-22T16:01:38.805916007Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T16:01:38.805937201Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_160138-ci7jnk64/logs/debug-core.log"}
+{"time":"2024-10-22T16:01:38.910442113Z","level":"INFO","msg":"created new stream","id":"ci7jnk64"}
+{"time":"2024-10-22T16:01:38.910492002Z","level":"INFO","msg":"stream: started","id":"ci7jnk64"}
+{"time":"2024-10-22T16:01:38.910546985Z","level":"INFO","msg":"handler: started","stream_id":{"value":"ci7jnk64"}}
+{"time":"2024-10-22T16:01:38.91059338Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"ci7jnk64"}}
+{"time":"2024-10-22T16:01:38.910641083Z","level":"INFO","msg":"sender: started","stream_id":"ci7jnk64"}
+{"time":"2024-10-22T16:01:39.47465933Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T16:01:40.747130737Z","level":"INFO","msg":"stream: closing","id":"ci7jnk64"}
+{"time":"2024-10-22T16:01:40.747196717Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T16:01:40.747917764Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T16:01:41.894937456Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T16:01:42.316957596Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"ci7jnk64"}}
+{"time":"2024-10-22T16:01:42.317043684Z","level":"INFO","msg":"sender: closed","stream_id":"ci7jnk64"}
+{"time":"2024-10-22T16:01:42.317031888Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"ci7jnk64"}}
+{"time":"2024-10-22T16:01:42.317129146Z","level":"INFO","msg":"stream: closed","id":"ci7jnk64"}

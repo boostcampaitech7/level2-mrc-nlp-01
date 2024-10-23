@@ -1,0 +1,22 @@
+output_dir ./outputs/train_dataset
+Lengths of unique contexts : 56737
+Some weights of BertForSequenceClassification were not initialized from the model checkpoint at klue/bert-base and are newly initialized: ['classifier.bias', 'classifier.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Lengths of unique contexts : 56737
+-----------BM25 pickle loaded.-----------
+Lengths of unique contexts : 56737
+Loaded 56737 unique contexts
+Initializing BM25 model...
+-----------BM25 pickle loaded.-----------
+Dense retriever does not have get_dense_embedding method. Skipping dense embedding initialization.
+Initialized hybrid_1stage with ratio: 0.5
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 486, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 483, in main
+    do_retrieval(config, training_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 393, in do_retrieval
+    df = retriever.retrieve(validation_dataset, topk=k)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/Retrieval/hybrid_1stage.py", line 72, in retrieve
+    if self.dense_retriever.p_embeddings is None:
+AttributeError: 'CrossDenseRetrieval' object has no attribute 'p_embeddings'

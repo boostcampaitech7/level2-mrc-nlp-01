@@ -1,0 +1,16 @@
+{"time":"2024-10-22T16:08:05.029710738Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T16:08:05.029730837Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_160805-pymt0ztm/logs/debug-core.log"}
+{"time":"2024-10-22T16:08:05.143806857Z","level":"INFO","msg":"created new stream","id":"pymt0ztm"}
+{"time":"2024-10-22T16:08:05.143855601Z","level":"INFO","msg":"stream: started","id":"pymt0ztm"}
+{"time":"2024-10-22T16:08:05.143912429Z","level":"INFO","msg":"handler: started","stream_id":{"value":"pymt0ztm"}}
+{"time":"2024-10-22T16:08:05.143887758Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"pymt0ztm"}}
+{"time":"2024-10-22T16:08:05.144000558Z","level":"INFO","msg":"sender: started","stream_id":"pymt0ztm"}
+{"time":"2024-10-22T16:08:05.538373782Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T16:08:17.745480895Z","level":"INFO","msg":"stream: closing","id":"pymt0ztm"}
+{"time":"2024-10-22T16:08:17.745535965Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T16:08:17.750617446Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T16:08:18.938446151Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T16:08:19.289861172Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"pymt0ztm"}}
+{"time":"2024-10-22T16:08:19.289994283Z","level":"INFO","msg":"sender: closed","stream_id":"pymt0ztm"}
+{"time":"2024-10-22T16:08:19.289976047Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"pymt0ztm"}}
+{"time":"2024-10-22T16:08:19.290152782Z","level":"INFO","msg":"stream: closed","id":"pymt0ztm"}

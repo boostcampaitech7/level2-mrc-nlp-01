@@ -1,0 +1,16 @@
+{"time":"2024-10-22T16:03:17.890453334Z","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-10-22T16:03:17.890474511Z","level":"INFO","msg":"created symlink","path":"/data/ephemeral/home/ksw/level2-mrc-nlp-01/wandb/run-20241022_160317-eohqa65v/logs/debug-core.log"}
+{"time":"2024-10-22T16:03:17.995140265Z","level":"INFO","msg":"created new stream","id":"eohqa65v"}
+{"time":"2024-10-22T16:03:17.995259817Z","level":"INFO","msg":"stream: started","id":"eohqa65v"}
+{"time":"2024-10-22T16:03:17.995341581Z","level":"INFO","msg":"sender: started","stream_id":"eohqa65v"}
+{"time":"2024-10-22T16:03:17.995340753Z","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"eohqa65v"}}
+{"time":"2024-10-22T16:03:17.995380265Z","level":"INFO","msg":"handler: started","stream_id":{"value":"eohqa65v"}}
+{"time":"2024-10-22T16:03:18.345994379Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-22T16:03:22.655033587Z","level":"INFO","msg":"stream: closing","id":"eohqa65v"}
+{"time":"2024-10-22T16:03:22.655078528Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-22T16:03:22.655851691Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-22T16:03:24.381385968Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-10-22T16:03:24.678686676Z","level":"INFO","msg":"handler: closed","stream_id":{"value":"eohqa65v"}}
+{"time":"2024-10-22T16:03:24.678742222Z","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"eohqa65v"}}
+{"time":"2024-10-22T16:03:24.678833096Z","level":"INFO","msg":"sender: closed","stream_id":"eohqa65v"}
+{"time":"2024-10-22T16:03:24.678840128Z","level":"INFO","msg":"stream: closed","id":"eohqa65v"}
