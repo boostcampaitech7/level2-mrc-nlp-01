@@ -23,6 +23,8 @@ import numpy as np
 from tqdm.auto import tqdm
 from transformers import PreTrainedTokenizerFast
 from transformers.trainer_utils import get_last_checkpoint
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 def postprocess_qa_predictions(
     examples,
@@ -337,3 +339,69 @@ def check_no_error(
     if "validation" not in datasets:
         raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
+
+def generate_gpt_negatives(contexts, num_negatives=1, batch_size=1):
+    model_name = "skt/kogpt2-base-v2"
+    tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=1024)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    
+    device = torch.device("cpu")
+    model = model.to(device)
+    
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    max_length = 512
+    negatives = []
+
+    for i in range(0, len(contexts), batch_size):
+        batch_contexts = contexts[i:i+batch_size]
+        batch_prompts = []
+        
+        for context in batch_contexts:
+            tokenized_context = tokenizer.encode(context, truncation=True, max_length=max_length)
+            truncated_context = tokenizer.decode(tokenized_context)
+            prompt = f"""다음은 원본 문단의 내용을 변경한 거짓 정보입니다. 원본 문단의 주제와 관련된 내용을 유지하면서 사실을 변경하세요:
+
+원본 문단: {truncated_context}
+
+변경된 문단:"""
+            batch_prompts.append(prompt)
+
+        inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+        
+        if 'token_type_ids' in inputs:
+            del inputs['token_type_ids']
+        
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            try:
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=300,
+                    num_return_sequences=1,
+                    no_repeat_ngram_size=2,
+                    do_sample=True, 
+                    temperature=0.7,
+                    top_k=50,
+                    top_p=0.95,
+                )
+            except RuntimeError as e:
+                logger.error(f"Error during generation: {e}")
+                continue
+
+        for j, output in enumerate(outputs):
+            generated_text = tokenizer.decode(output, skip_special_tokens=True)
+            split_text = generated_text.split("변경된 문단:")
+            if len(split_text) > 1:
+                modified_context = split_text[-1].strip()
+            else:
+                modified_context = generated_text.strip()
+            
+            if modified_context:
+                negatives.append(modified_context)
+            else:
+                negatives.append(batch_contexts[j])
+
+    return negatives
