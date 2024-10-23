@@ -13,6 +13,7 @@ from datasets import Dataset, DatasetDict, Features, Sequence, Value, concatenat
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
 from rank_bm25 import BM25Okapi
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 seed = 2024
 random.seed(seed) # python random seed 고정
@@ -57,17 +58,42 @@ class SparseRetrieval:
         self.bm25 = None
         self.tokenize_fn = tokenize_fn
 
+
+    def parallel_tokenize(self, contexts: List[str]) -> List[List[str]]:
+        """
+        여러 문서를 병렬로 토큰화합니다.
+        """
+        tokenized_contexts = []
+        
+        # ThreadPoolExecutor를 사용하여 병렬로 토큰화
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self.tokenize_fn, doc) for doc in contexts]
+            
+            # 토큰화 결과를 순서대로 리스트에 저장
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Parallel tokenizing"):
+                tokenized_contexts.append(future.result())
+        
+        return tokenized_contexts
+
+
     def train(self, emb_path=None):
         if emb_path is None:
-            # Fix: Use a consistent variable for embedding path
             pickle_name = f"bm25_sparse_embedding.bin"
             emb_path = os.path.join(self.data_path, pickle_name)
-        tokenized_contexts = [self.tokenize_fn(doc) for doc in tqdm(self.contexts, desc="Tokenizing documents")]
+        
+        # 병렬 토큰화 사용
+        tokenized_contexts = self.parallel_tokenize(self.contexts)
+        
+        # BM25 학습
         self.bm25 = BM25Okapi(tokenized_contexts)
-        # Fix: Save the BM25 model properly
+        
+        # BM25 모델 저장
         with open(emb_path, "wb") as file:
             pickle.dump(self.bm25, file)
+        
         print("-----------BM25 pickle saved.-----------")
+        
+        
 
     def get_sparse_embedding(self) -> NoReturn:
         """
@@ -244,17 +270,14 @@ class SparseRetrieval:
         doc_scores, doc_indices = scores[sorted_result][:k].tolist(), sorted_result[:k].tolist()
         return doc_scores, doc_indices
 
-    def get_relevant_doc_bulk(
-        self, queries: List, k: Optional[int] = 1
-        ) -> Tuple[List, List]:
-        """
-        Arguments:
-            queries (List):
-                여러 개의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        """
-        # self.bm25가 None인 경우 BM25 모델을 로드하거나 학습합니다.
+    def process_single_query(self, query):
+        tokenized_query = self.tokenize_fn(query)
+        scores = self.bm25.get_scores(tokenized_query)
+        sorted_result = np.argsort(scores)[::-1]
+        return scores[sorted_result], sorted_result
+    
+    
+    def get_relevant_doc_bulk(self, queries: List[str], k: Optional[int] = 1) -> Tuple[List[List[float]], List[List[int]]]:
         if self.bm25 is None:
             self.get_sparse_embedding()
 
@@ -263,13 +286,15 @@ class SparseRetrieval:
         print('get_relevant_doc_bulk 실행중 queries의 개수는 ', len(queries))
         print('get_relevant_doc_bulk 실행중 queries의 type은 ', type(queries))
 
-        for query in tqdm(queries, desc="Processing queries"):
-            tokenized_query = self.tokenize_fn(query)
-            scores = self.bm25.get_scores(tokenized_query)
-            sorted_result = np.argsort(scores)[::-1]
-            doc_scores.append(scores[sorted_result][:k].tolist())
-            doc_indices.append(sorted_result[:k].tolist())
-        
+        with ThreadPoolExecutor() as executor:
+            print("self.process_single_query하는중")
+            future_to_query = {executor.submit(self.process_single_query, query): query for query in queries}
+            print("self.process_single_query끝남")
+            for future in tqdm(as_completed(future_to_query), total=len(future_to_query), desc="Processing queries"):
+                scores, indices = future.result()
+                doc_scores.append(scores[:k].tolist())
+                doc_indices.append(indices[:k].tolist())
+            
         return doc_scores, doc_indices
         
     

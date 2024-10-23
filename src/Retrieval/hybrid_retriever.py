@@ -29,7 +29,7 @@ def timer(name):
 class HybridRetriever:
     def __init__(self, config, dense_retriever, sparse_retriever):
         set_seed(config.seed())
-        self.context_path = config.dataset.context_path()
+        self.context_path = config.dataRetrieval.context_path()
         with open(self.context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
