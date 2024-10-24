@@ -27,9 +27,12 @@ peft:
   lora_dropout: 0.1 # default = 0.1
 
 dataRetrieval:
-  type: sparse   # sparse dense hybrid
+  type: hybrid1
   eval: True
   context_path: ./data/wikipedia_documents.json
+  sparse_embedding_path: /data/ephemeral/home/ksw/level2-mrc-nlp-01/data/bm25_sparse_embedding.bin
+  dense_model_path: /data/ephemeral/home/ksw/level2-mrc-nlp-01/models/train_dataset
+  hybrid_ratio: 0.7
   top_k: 10
   faiss:
     use: False

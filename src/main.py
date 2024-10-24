@@ -26,6 +26,7 @@ from Retrieval.sparse_retrieval import SparseRetrieval
 from Retrieval.dense_retrieval import DenseRetrieval
 from Retrieval.cross_encoder import CrossDenseRetrieval
 from Retrieval.hybrid_retriever import HybridRetriever
+from Retrieval.hybrid_1stage import Hybrid1Retriever  # 새로 만든 파일에서 import
 from dataclasses import dataclass, field
 import nltk
 import wandb
@@ -358,6 +359,10 @@ def do_retrieval(config, training_args, logger, is_testing):
             testing=is_testing,
         )
         retriever = HybridRetriever(dense_retriever, sparse_retriever)
+    elif config.dataRetrieval.type() == "hybrid1":
+        retriever = Hybrid1Retriever(config)
+    else:
+        raise ValueError(f"Unknown retrieval type: {config.dataRetrieval.type()}")
     
     if training_args.do_train:
         retriever.train()
@@ -367,31 +372,41 @@ def do_retrieval(config, training_args, logger, is_testing):
         if is_testing:
             datasets = use_small_datasets(datasets)
         validation_dataset = datasets["validation"]
-        # TODO: faiss에 대한 설정 필요
         k = config.dataRetrieval.top_k(5)
-        df = retriever.retrieve(validation_dataset, 
-                                topk=k,
-                                concat_context=False)
+        
+        if config.dataRetrieval.type() == "hybrid1":
+            df = retriever.retrieve(validation_dataset, topk=k)
+        else:
+            df = retriever.retrieve(validation_dataset, topk=k, concat_context=False)
+        
         rankings = []
         for _, row in df.iterrows():
-            in_k = False
-            for rank, context in enumerate(row["context"]):
-                if row["original_context"] == context:
-                    in_k = True
-                    rankings.append(rank+1)
-                    break
-            if not in_k:
-                rankings.append(k+1)
+            if config.dataRetrieval.type() == "hybrid1":
+                if row['original_context'] in row['context']:
+                    rank = row['context'].index(row['original_context']) + 1
+                    rankings.append(min(rank, k))
+                else:
+                    rankings.append(k + 1)
+            else:
+                in_k = False
+                for rank, context in enumerate(row["context"]):
+                    if row["original_context"] == context:
+                        in_k = True
+                        rankings.append(rank+1)
+                        break
+                if not in_k:
+                    rankings.append(k+1)
 
         def recall_at_k(k):
             return sum([1 for rank in rankings if rank <= k]) / len(rankings)
         
         recalls = {f"recall@{i}": recall_at_k(i) for i in range(1, k+1)}
         output_path = config.output.train('./outputs/train_dataset')
-        with open(os.path.join(output_path, 'recalls.json'), 'w') as f:
+        os.makedirs(output_path, exist_ok=True)
+        with open(os.path.join(output_path, f'{config.dataRetrieval.type()}_recalls.json'), 'w') as f:
             json.dump(recalls, f, indent=4)
-            
-        print(f"Recall@{k} : {recalls[f'recall@{k}']}")
+        
+        print(f"{config.dataRetrieval.type().capitalize()} Recall@{k}: {recalls[f'recall@{k}']}")
     
     elif training_args.do_predict:
         datasets = load_from_disk(config.dataQA.path.test('./data/test_dataset'))
@@ -462,3 +477,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

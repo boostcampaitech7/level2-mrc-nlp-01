@@ -1,0 +1,30 @@
+output_dir ./outputs/train_dataset
+10/24/2024 05:10:49 - WARNING - accelerate.utils.other -   Detected kernel version 5.4.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+Traceback (most recent call last):
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 479, in <module>
+    main()
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 473, in main
+    do_mrc(config, training_args, module_args, logger, is_testing)
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/main.py", line 307, in do_mrc
+    trainer = QuestionAnsweringTrainer(
+  File "/data/ephemeral/home/ksw/level2-mrc-nlp-01/src/QuestionAnswering/trainer.py", line 41, in __init__
+    super().__init__(*args, tokenizer=wrapped_tokenizer.tokenizer, **kwargs)
+  File "/opt/conda/lib/python3.10/site-packages/transformers/trainer.py", line 554, in __init__
+    self._move_model_to_device(model, args.device)
+  File "/opt/conda/lib/python3.10/site-packages/transformers/trainer.py", line 802, in _move_model_to_device
+    model = model.to(device)
+  File "/opt/conda/lib/python3.10/site-packages/transformers/modeling_utils.py", line 2958, in to
+    return super().to(*args, **kwargs)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1160, in to
+    return self._apply(convert)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 833, in _apply
+    param_applied = fn(param)
+  File "/opt/conda/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1158, in convert
+    return t.to(device, dtype if t.is_floating_point() or t.is_complex() else None, non_blocking)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 736.00 MiB. GPU 0 has a total capacty of 31.74 GiB of which 180.38 MiB is free. Process 3244281 has 31.26 GiB memory in use. Process 3245717 has 306.00 MiB memory in use. Of the allocated memory 0 bytes is allocated by PyTorch, and 0 bytes is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
