@@ -57,7 +57,10 @@ def do_ensemble(dirname, weights, file_names):
         max_idx = np.argmax(probs)
         ensembled[id] = pretexts[max_idx][0]
     
-    with open('ensemble.json', 'w', encoding='UTF-8') as f:
+    name = input("Enter the name of the ensemble file (default 'ensemble'): ")
+    if name == "":
+        name = "ensemble"
+    with open(name+'.json', 'w', encoding='UTF-8') as f:
         json.dump(ensembled, f, indent=4, ensure_ascii=False)
     
     results = compute_metric(ensembled)
@@ -65,7 +68,7 @@ def do_ensemble(dirname, weights, file_names):
 
 def main():
     dirname = input(
-        "Enter the directory name where the prediction files are located (default 'output/ensemble'): "
+        "Enter the directory name where the prediction files are located (default 'outputs/ensemble'): "
     )
     if dirname == "":
         dirname = "outputs/ensemble"
