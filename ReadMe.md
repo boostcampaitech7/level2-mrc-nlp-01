@@ -166,18 +166,15 @@ project/
 ### 7.1 협업 및 프로젝트 관리
 - Notion, Git, Zoom 등 다양한 협업 도구의 효과적 활용으로 원활한 소통과 진행 상황 공유
 - GitHub의 이슈, PR, Release 기능을 적극 활용한 버전 관리와 작업 추적 시도
-- FeedBack: 
 
 ### 7.2 데이터 중심 접근
 - Streamlit을 활용한 EDA 서버 구축으로 실시간 데이터 분석과 공유 실현
 - UNK 토큰 분석 등 데이터 증강 및 전처리 과정에서의 세밀한 접근 시도
-- FeedBack: 데이터 품질 개선에 충분한 시간이 부족했음. 더 다양하게 시도해봤어야 했음.
 
 ### 7.3 모델 개발 및 실험
 - Sparse Retrieval(BM25), Dense Retrieval, Cross Encoder 등 다양한 접근 방식 시도
 - Extraction-based와 Generation-based Reader 모델의 비교 분석
 - 하이퍼파라미터 튜닝, LoRA 적용 등 성능 최적화 노력
-- FeedBack: 실험 설계 시 명확한 가설 수립과 체계적인 검증 과정을 Dash Board 등으로 명확히 기록하고 공유했어야 함.
 
 ### 7.4 FeedBack
 - 리더보드 순위보다 학습과 성장에 초점을 맞춘 프로젝트 진행
