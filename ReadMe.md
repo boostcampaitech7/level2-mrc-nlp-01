@@ -156,7 +156,7 @@ project/
 - `klue/bert-base`, `monologg/koelectra-base-v3-discriminator`
 
 #### DeBERTa-base
-- `timpal0l/mdeberta-v3-base-squad2`, `kakaobank/kf-deberta-base`
+- `timpal0l/mdeberta-v3-base-squad2` ([후처리 함수](https://colab.research.google.com/drive/1VMld_ULNAaOsoX39gPFTzmxI9RE6jgDY?usp=sharing)), `kakaobank/kf-deberta-base`
 
 #### RoBERTa-base
 - `Dongjin-kr/ko-reranker`, `hongzoh/roberta-large-qa-korquad-v1`
