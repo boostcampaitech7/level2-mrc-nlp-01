@@ -1,0 +1,14 @@
+datasets==3.0.1
+evaluate==0.4.3
+faiss_gpu==1.7.2
+numpy==2.1.2
+pandas==2.2.3
+PyYAML==6.0.2
+rank_bm25==0.2.2
+scikit_learn==1.5.2
+streamlit==1.39.0
+torch==2.1.0
+torch_xla==2.4.0
+tqdm==4.66.3
+transformers==4.45.2
+rank_bm25
